@@ -2,302 +2,365 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#07060a" />
   <title>I Know A Spot</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     :root {
-      --bg-deep:    #07060a;
-      --bg-dark:    #111019;
-      --bg-card:    #18150e;
-      --bg-input:   #201c12;
-      --border:     #29231a;
-      --border-hi:  #4a3d1e;
-      --gold-dim:   #7a6020;
-      --gold:       #c8901c;
-      --gold-mid:   #dfa030;
-      --gold-hi:    #f2c045;
-      --text:       #ede2ca;
-      --text-muted: #8a7a62;
-      --text-dim:   #4e4332;
-      --danger:     #b03a2e;
+      --bg:       #07060a;
+      --bg-card:  #18150e;
+      --bg-input: #221d12;
+      --border:   #29231a;
+      --bhi:      #4a3d1e;
+      --gold:     #c8901c;
+      --gmid:     #dfa030;
+      --ghi:      #f2c045;
+      --t1:       #ede2ca;
+      --t2:       #8a7a62;
+      --t3:       #4e4332;
+      --danger:   #c0392b;
+      --blue:     #007AFF;
+      --sys: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      height: 100%; overflow: hidden;
-      background: var(--bg-deep); color: var(--text);
-      font-family: Georgia, 'Times New Roman', serif;
+      height: 100%; height: 100dvh; overflow: hidden;
+      background: var(--bg); color: var(--t1);
+      font-family: var(--sys);
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ── MAP ──────────────────────────────────────────── */
-    #map { position: fixed; inset: 0; cursor: crosshair; }
+    /* MAP */
+    #map { position: fixed; inset: 0; }
 
-    /* ── HEADER ───────────────────────────────────────── */
+    /* LOCATING SCREEN */
+    #locating {
+      position: fixed; inset: 0; z-index: 4000;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity .55s ease;
+    }
+    #locating.gone { opacity: 0; pointer-events: none; }
+    .loc-icon  { font-size: 48px; margin-bottom: 18px; }
+    .loc-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 7px; }
+    .loc-sub   { font-size: 15px; color: var(--t2); margin-bottom: 26px; }
+    .loc-spin  {
+      width: 24px; height: 24px;
+      border: 2.5px solid rgba(255,255,255,.12);
+      border-top-color: var(--ghi); border-radius: 50%;
+      animation: spin .75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* HEADER */
     #hdr {
       position: fixed; top: 0; left: 0; right: 0; z-index: 900;
-      padding: 18px 22px 40px;
-      background: linear-gradient(to bottom, rgba(7,6,10,.96) 0%, transparent 100%);
-      display: flex; align-items: flex-start; justify-content: space-between;
+      padding: env(safe-area-inset-top, 0) 18px 0;
+      background: linear-gradient(to bottom, rgba(7,6,10,.95) 55%, transparent 100%);
       pointer-events: none;
     }
-    #hdr-left { pointer-events: auto; }
-    #app-name {
-      font-size: 21px; font-weight: normal; letter-spacing: .04em;
-      color: var(--gold-hi); text-shadow: 0 0 28px rgba(242,192,69,.55);
+    #hdr-inner {
+      height: 56px; display: flex; align-items: center;
+      justify-content: space-between; pointer-events: auto;
     }
-    #app-sub {
-      font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
-      color: var(--text-muted); margin-top: 3px;
+    #app-name {
+      font-size: 19px; font-weight: 700; letter-spacing: -.025em;
+      color: var(--ghi); text-shadow: 0 0 22px rgba(242,192,69,.45);
     }
     #spot-count {
-      pointer-events: auto;
-      background: rgba(24,21,14,.92); border: 1px solid var(--border-hi);
-      border-radius: 20px; padding: 6px 15px; font-size: 12.5px;
-      color: var(--gold-mid); backdrop-filter: blur(8px);
-      cursor: pointer; transition: all .2s;
+      min-height: 36px; padding: 0 14px;
+      background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
+      border-radius: 18px; font-size: 13px; font-weight: 600;
+      color: var(--gmid); display: flex; align-items: center;
+      touch-action: manipulation; cursor: pointer;
     }
-    #spot-count:hover { border-color: var(--gold); color: var(--gold-hi); }
+    #spot-count:active { opacity: .65; }
 
-    /* ── HINT ────────────────────────────────────────── */
-    #hint {
-      position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%);
-      z-index: 850; background: rgba(24,21,14,.88);
-      border: 1px solid var(--border-hi); border-radius: 20px;
-      padding: 9px 20px; font-size: 12.5px; color: var(--text-muted);
-      letter-spacing: .05em; backdrop-filter: blur(8px);
-      pointer-events: none; transition: opacity .6s; white-space: nowrap;
-    }
-    #hint.gone { opacity: 0; }
-
-    /* ── PANEL TOGGLE ────────────────────────────────── */
-    #panel-toggle {
-      position: fixed; top: 50%; right: 20px; transform: translateY(-50%);
-      z-index: 910; background: rgba(24,21,14,.92);
-      border: 1px solid var(--border-hi); border-radius: 10px;
-      padding: 11px 13px; cursor: pointer; color: var(--gold-mid);
-      font-size: 12px; letter-spacing: .08em; backdrop-filter: blur(8px);
-      transition: all .2s; writing-mode: vertical-rl; font-family: Georgia, serif;
-    }
-    #panel-toggle:hover { border-color: var(--gold); color: var(--gold-hi); }
-
-    /* ── SPOTS PANEL ─────────────────────────────────── */
-    #panel {
-      position: fixed; top: 0; right: -360px; width: 340px; height: 100%;
-      background: var(--bg-card); border-left: 1px solid var(--border);
-      z-index: 950; transition: right .35s cubic-bezier(.32,.72,0,1);
-      display: flex; flex-direction: column;
-    }
-    #panel.open { right: 0; }
-    #panel-head {
-      padding: 72px 22px 16px; border-bottom: 1px solid var(--border);
-      font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    #panel-list { overflow-y: auto; flex: 1; }
-    .pitem {
-      padding: 13px 22px; border-bottom: 1px solid var(--border);
-      cursor: pointer; transition: background .15s;
+    /* BOTTOM BAR */
+    #bottom-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 890;
+      padding: 10px 16px max(20px, env(safe-area-inset-bottom, 20px));
+      background: linear-gradient(to top, rgba(7,6,10,.92) 55%, transparent 100%);
       display: flex; align-items: center; gap: 10px;
     }
-    .pitem:hover { background: rgba(201,144,28,.08); }
-    .pitem-dot {
-      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
-    }
-    .pitem-text { flex: 1; min-width: 0; }
-    .pitem-name { font-size: 14px; color: var(--gold-mid); margin-bottom: 3px; }
-    .pitem-badge { font-size: 11px; }
-    .empty-panel {
-      text-align: center; padding: 40px 22px;
-      color: var(--text-dim); font-size: 13px; font-style: italic; line-height: 1.8;
-    }
 
-    /* ── OVERLAY ─────────────────────────────────────── */
-    .overlay {
+    /* PRIMARY ACTION BUTTON */
+    #add-btn {
+      flex: 1; height: 64px; border: none; border-radius: 20px; cursor: pointer;
+      background: linear-gradient(135deg, #d49520 0%, #f0b030 45%, #d49520 100%);
+      color: #1a0d00; font-size: 15px; font-weight: 900;
+      letter-spacing: .08em; text-transform: uppercase;
+      font-family: var(--sys);
+      box-shadow: 0 4px 24px rgba(210,149,28,.55), 0 1px 0 rgba(255,255,255,.18) inset;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      touch-action: manipulation;
+      transition: transform .12s, box-shadow .12s;
+    }
+    #add-btn:active {
+      transform: scale(0.95);
+      box-shadow: 0 2px 12px rgba(210,149,28,.4);
+    }
+    #add-btn-icon { font-size: 19px; }
+
+    #locate-btn {
+      width: 52px; height: 64px; border: 1px solid var(--bhi); border-radius: 16px;
+      background: rgba(24,21,14,.92); color: var(--t1); font-size: 22px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; touch-action: manipulation; flex-shrink: 0;
+      transition: transform .12s;
+    }
+    #locate-btn:active { transform: scale(0.92); }
+
+    /* SHEET OVERLAY */
+    .sov {
       position: fixed; inset: 0; z-index: 1200;
-      background: rgba(0,0,0,.68); backdrop-filter: blur(3px);
-      display: flex; align-items: flex-end; justify-content: center;
-      opacity: 0; pointer-events: none; transition: opacity .28s;
+      background: rgba(0,0,0,.52);
+      display: flex; flex-direction: column; justify-content: flex-end;
+      opacity: 0; pointer-events: none; transition: opacity .26s;
     }
-    .overlay.on { opacity: 1; pointer-events: auto; }
+    .sov.on { opacity: 1; pointer-events: auto; }
 
-    /* ── MODAL ───────────────────────────────────────── */
-    .modal {
-      width: 100%; max-width: 540px; max-height: 92vh;
-      background: var(--bg-card); border-top: 1px solid var(--border-hi);
-      border-radius: 20px 20px 0 0; padding: 10px 26px 38px;
-      overflow-y: auto;
+    /* SHEET */
+    .sheet {
+      width: 100%; background: var(--bg-card);
+      border-top: 1px solid var(--bhi);
+      border-radius: 20px 20px 0 0;
+      max-height: 88dvh; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      will-change: transform;
       transform: translateY(100%);
-      transition: transform .38s cubic-bezier(.32,.72,0,1);
+      transition: transform .4s cubic-bezier(.32,.72,0,1);
     }
-    .overlay.on .modal { transform: translateY(0); }
-    .handle {
-      width: 36px; height: 4px; background: var(--border);
-      border-radius: 2px; margin: 12px auto 20px;
-    }
-    .modal-title {
-      font-size: 19px; color: var(--gold-mid); margin-bottom: 6px;
-      letter-spacing: .03em;
-    }
-    .modal-sub {
-      font-size: 14px; color: var(--text-muted); font-style: italic;
-      margin-bottom: 22px;
+    .sov.on .sheet { transform: translateY(0); }
+
+    .drag-handle {
+      width: 36px; height: 4px; background: var(--bhi);
+      border-radius: 2px; margin: 12px auto 0; flex-shrink: 0;
     }
 
-    /* ── FORM ────────────────────────────────────────── */
-    .fg { margin-bottom: 18px; }
+    .sh-title {
+      font-size: 21px; font-weight: 700; letter-spacing: -.025em;
+      padding: 16px 20px 4px;
+    }
+    .sh-sub {
+      font-size: 14px; color: var(--t2); font-style: italic;
+      padding: 0 20px 16px; line-height: 1.4;
+    }
+
+    /* FORM */
+    .fg { padding: 0 20px; margin-bottom: 16px; }
     .flabel {
-      display: block; font-size: 10.5px; letter-spacing: .16em;
-      text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+      display: block; font-size: 11px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--t2); margin-bottom: 8px;
     }
     .finput, .ftextarea {
-      width: 100%; background: var(--bg-input); border: 1px solid var(--border);
-      border-radius: 8px; padding: 11px 13px; color: var(--text);
-      font-family: Georgia, serif; font-size: 15px;
-      outline: none; transition: border-color .2s;
+      width: 100%; background: var(--bg-input);
+      border: 1.5px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; color: var(--t1);
+      font-family: var(--sys); font-size: 16px;
+      outline: none; -webkit-appearance: none;
+      transition: border-color .2s;
     }
-    .finput:focus, .ftextarea:focus { border-color: var(--gold-dim); }
-    .ftextarea { min-height: 96px; resize: vertical; }
-    .finput.err { border-color: var(--gold-hi) !important; }
+    .finput:focus, .ftextarea:focus { border-color: var(--gold); }
+    .ftextarea { min-height: 96px; resize: none; line-height: 1.5; }
+    .finput.err { border-color: var(--ghi); }
 
-    /* ── PHOTO UPLOAD ────────────────────────────────── */
+    /* PHOTO UPLOAD */
     .upload-zone {
       position: relative; border: 2px dashed var(--border);
-      border-radius: 8px; padding: 18px; text-align: center;
-      cursor: pointer; transition: border-color .2s, background .2s;
+      border-radius: 12px; padding: 20px 16px; text-align: center;
+      cursor: pointer; touch-action: manipulation;
     }
-    .upload-zone:hover { border-color: var(--gold-dim); background: rgba(201,144,28,.04); }
+    .upload-zone:active { border-color: var(--gold); background: rgba(200,144,28,.05); }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .upload-icon { font-size: 26px; margin-bottom: 6px; }
-    .upload-txt { font-size: 12.5px; color: var(--text-muted); }
-    .previews { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .upload-icon { font-size: 28px; margin-bottom: 6px; }
+    .upload-txt  { font-size: 13px; color: var(--t2); }
+    .previews { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .prev-item {
-      position: relative; width: 70px; height: 70px;
-      border-radius: 6px; overflow: hidden; border: 1px solid var(--border); flex-shrink: 0;
+      position: relative; width: 72px; height: 72px;
+      border-radius: 10px; overflow: hidden; border: 1.5px solid var(--border);
     }
     .prev-item img { width: 100%; height: 100%; object-fit: cover; }
     .prev-rm {
-      position: absolute; top: 2px; right: 2px; width: 17px; height: 17px;
-      background: rgba(0,0,0,.75); border: none; border-radius: 50%;
-      cursor: pointer; color: #fff; font-size: 9px;
+      position: absolute; top: 3px; right: 3px;
+      width: 20px; height: 20px; background: rgba(0,0,0,.8);
+      border: none; border-radius: 50%; cursor: pointer;
+      color: #fff; font-size: 10px;
       display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation;
     }
 
-    /* ── BUTTONS ─────────────────────────────────────── */
-    .btn-row { display: flex; gap: 10px; margin-top: 22px; }
+    /* BUTTONS */
+    .btn-row { display: flex; gap: 10px; padding: 0 20px; margin-top: 18px; }
     .btn {
-      flex: 1; padding: 12px 18px; border: none; border-radius: 8px;
-      cursor: pointer; font-size: 13.5px; letter-spacing: .04em;
-      font-family: Georgia, serif; transition: all .2s;
+      flex: 1; min-height: 52px; border: none; border-radius: 14px;
+      font-family: var(--sys); font-size: 16px; font-weight: 600;
+      cursor: pointer; touch-action: manipulation;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .12s, opacity .12s;
     }
+    .btn:active { transform: scale(0.96); opacity: .8; }
     .btn-primary {
-      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-mid) 100%);
-      color: var(--bg-deep); font-weight: bold;
-    }
-    .btn-primary:hover {
-      background: linear-gradient(135deg, var(--gold-mid) 0%, var(--gold-hi) 100%);
-      box-shadow: 0 4px 18px rgba(242,192,69,.28);
+      background: linear-gradient(135deg, var(--gold), var(--gmid));
+      color: #1a0d00;
     }
     .btn-sec {
-      background: transparent; color: var(--text-muted); border: 1px solid var(--border);
+      background: var(--bg-input); color: var(--t2);
+      border: 1.5px solid var(--border);
     }
-    .btn-sec:hover { border-color: var(--gold-dim); color: var(--text); }
     .btn-del {
-      background: transparent; color: var(--danger);
-      border: 1px solid rgba(176,58,46,.35); flex: none; padding: 12px 15px;
+      background: rgba(192,57,43,.1); color: var(--danger);
+      border: 1.5px solid rgba(192,57,43,.28);
+      flex: none; padding: 0 20px;
     }
-    .btn-del:hover { background: rgba(176,58,46,.1); border-color: var(--danger); }
+    .sh-gap { height: max(16px, env(safe-area-inset-bottom, 16px)); }
 
-    /* ── RATING MODAL ────────────────────────────────── */
-    .rate-grid { display: flex; flex-direction: column; gap: 7px; }
+    /* RATING SHEET */
+    .rate-grid { display: flex; flex-direction: column; gap: 8px; padding: 0 20px; }
     .rate-opt {
       display: flex; align-items: center; gap: 14px;
-      padding: 12px 15px; border: 1.5px solid var(--border);
-      border-radius: 10px; cursor: pointer;
-      background: var(--bg-input); transition: all .18s;
+      min-height: 62px; padding: 14px 16px;
+      background: var(--bg-input); border: 1.5px solid var(--border);
+      border-radius: 14px; cursor: pointer; touch-action: manipulation;
     }
-    .rate-dot {
-      width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
-    }
-    .rate-info { flex: 1; }
-    .rate-badge-name { font-size: 14.5px; color: var(--text); }
-    .rate-stars-txt { font-size: 11.5px; color: var(--text-dim); letter-spacing: 2px; margin-top: 2px; }
+    .rate-opt:active { transform: scale(0.97); opacity: .85; }
+    .rate-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .rate-name { font-size: 16px; font-weight: 600; color: var(--t1); }
+    .rate-stars { font-size: 12px; color: var(--t3); margin-top: 3px; letter-spacing: 2px; }
 
-    /* ── DETAIL VIEW ─────────────────────────────────── */
-    .spot-hd {
-      font-size: 23px; color: var(--gold-hi); margin-bottom: 5px;
-      text-shadow: 0 0 22px rgba(242,192,69,.3);
+    /* VIEW SHEET */
+    .v-name {
+      font-size: 26px; font-weight: 700; letter-spacing: -.025em;
+      padding: 16px 20px 4px;
     }
-    .spot-meta {
-      font-size: 11.5px; color: var(--text-dim); letter-spacing: .05em; margin-bottom: 16px;
+    .v-meta {
+      font-size: 12px; color: var(--t3); letter-spacing: .04em;
+      padding: 0 20px 0;
     }
-
-    /* inline rating row in view modal */
     .v-rate-section {
-      margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border); margin: 14px 0;
     }
     .v-rate-lbl {
-      font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
-      color: var(--text-dim); margin-bottom: 8px;
+      font-size: 10px; font-weight: 600; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--t3); margin-bottom: 10px;
     }
-    .v-rate-row { display: flex; gap: 5px; margin-bottom: 8px; }
+    .v-rate-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .v-ropt {
-      flex: 1; height: 34px; border: 1.5px solid var(--border);
-      border-radius: 8px; background: var(--bg-input);
-      cursor: pointer; font-size: 14px; font-weight: bold;
-      transition: all .18s; color: var(--text-dim); font-family: Georgia, serif;
+      flex: 1; height: 46px; border: 1.5px solid var(--border);
+      border-radius: 10px; background: var(--bg-input);
+      font-family: var(--sys); font-size: 17px; font-weight: 700;
+      cursor: pointer; touch-action: manipulation;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .1s;
     }
-    .v-ropt:hover { filter: brightness(1.25); }
-    .v-ropt.active {
-      border-width: 2px;
-    }
-    .v-badge-now {
-      font-size: 13px; font-weight: bold; letter-spacing: .04em; min-height: 18px;
-    }
-
-    .spot-vibe {
-      font-size: 15px; color: var(--text-muted); line-height: 1.75;
-      font-style: italic; margin-bottom: 18px;
+    .v-ropt:active { transform: scale(0.91); }
+    .v-badge { font-size: 14px; font-weight: 600; min-height: 18px; }
+    .v-vibe {
+      font-size: 16px; color: var(--t2); line-height: 1.75;
+      font-style: italic; padding: 0 20px 16px;
+      font-family: Georgia, serif;
     }
     .gallery {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-      gap: 7px; margin-bottom: 18px;
+      display: grid; gap: 3px; padding: 0 20px; margin-bottom: 16px;
+      grid-template-columns: repeat(3, 1fr);
     }
-    .gallery.solo { grid-template-columns: 1fr; }
+    .gallery.g1 { grid-template-columns: 1fr; }
+    .gallery.g2 { grid-template-columns: 1fr 1fr; }
     .gphoto {
-      width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px;
-      cursor: zoom-in; border: 1px solid var(--border); transition: transform .18s, box-shadow .18s;
+      width: 100%; aspect-ratio: 1; object-fit: cover;
+      border-radius: 8px; cursor: zoom-in; touch-action: manipulation;
     }
-    .gphoto:hover { transform: scale(1.025); box-shadow: 0 4px 20px rgba(242,192,69,.2); }
-    .gallery.solo .gphoto { aspect-ratio: 16/9; }
+    .gallery.g1 .gphoto { aspect-ratio: 4/3; border-radius: 12px; }
 
-    /* ── LIGHTBOX ────────────────────────────────────── */
+    /* SPOTS LIST SHEET */
+    .list-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px 14px; border-bottom: 1px solid var(--border);
+    }
+    .list-hdr-title { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+    .list-close {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--bg-input); border: none; cursor: pointer;
+      color: var(--t2); font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation;
+    }
+    .list-close:active { opacity: .6; }
+    #plist { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .pitem {
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+      min-height: 64px; cursor: pointer; touch-action: manipulation;
+    }
+    .pitem:active { background: rgba(255,255,255,.04); }
+    .pitem-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .pitem-name { font-size: 16px; font-weight: 600; color: var(--t1); margin-bottom: 3px; }
+    .pitem-badge{ font-size: 13px; }
+    .empty-list {
+      text-align: center; padding: 52px 24px;
+      color: var(--t3); font-size: 15px; line-height: 1.9;
+    }
+
+    /* LIGHTBOX */
     #lb {
-      position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.96);
-      display: none; align-items: center; justify-content: center; cursor: zoom-out;
+      position: fixed; inset: 0; z-index: 3000;
+      background: rgba(0,0,0,.97);
+      display: none; align-items: center; justify-content: center;
+      touch-action: manipulation;
     }
     #lb.on { display: flex; }
-    #lb img { max-width: 92%; max-height: 90vh; object-fit: contain; border-radius: 4px; }
+    #lb img { max-width: 100%; max-height: 92dvh; object-fit: contain; }
 
-    /* ── TOAST ───────────────────────────────────────── */
+    /* TOAST */
     #toast {
-      position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%) translateY(20px);
-      z-index: 1800; background: var(--gold); color: var(--bg-deep);
-      padding: 9px 22px; border-radius: 20px; font-size: 13px; letter-spacing: .04em;
-      opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s;
+      position: fixed; z-index: 2000;
+      bottom: max(108px, calc(env(safe-area-inset-bottom, 0px) + 96px));
+      left: 50%; transform: translateX(-50%) translateY(14px);
+      background: rgba(28,24,16,.97); color: var(--t1);
+      border: 1px solid var(--bhi); border-radius: 20px;
+      padding: 10px 20px; font-size: 14px; font-weight: 500;
+      opacity: 0; pointer-events: none; white-space: nowrap;
+      transition: opacity .28s, transform .28s;
     }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-    /* ── MARKER ──────────────────────────────────────── */
-    .pin-outer {
-      display: flex; flex-direction: column; align-items: center;
+    /* USER LOCATION DOT */
+    .uloc { position: relative; width: 22px; height: 22px; }
+    .uloc-ring {
+      position: absolute; inset: 0;
+      background: rgba(0,122,255,.22); border-radius: 50%;
+      animation: ring 2.2s ease-out infinite;
     }
-    .pin-inner { width: 26px; height: 36px; position: relative; flex-shrink: 0; }
-    .pin-shape {
+    .uloc-dot {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      width: 13px; height: 13px;
+      background: var(--blue); border-radius: 50%;
+      border: 2.5px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,122,255,.55);
+      z-index: 1;
+    }
+    @keyframes ring {
+      0%   { transform: scale(1);   opacity: .9; }
+      80%  { transform: scale(3.4); opacity: 0; }
+      100% { opacity: 0; }
+    }
+
+    /* SPOT MARKER */
+    .pin-outer { display: flex; flex-direction: column; align-items: center; }
+    .pin-body   { width: 26px; height: 36px; position: relative; }
+    .pin-shape  {
       width: 18px; height: 18px; border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg); position: absolute; top: 0; left: 4px;
-      transition: transform .18s;
     }
     .pin-shape::after {
       content: ''; width: 6px; height: 6px; background: rgba(0,0,0,.28);
@@ -305,149 +368,165 @@
       top: 50%; left: 50%; transform: translate(-50%,-50%);
     }
     .pin-shadow {
-      width: 12px; height: 4px; background: rgba(0,0,0,.4);
+      width: 12px; height: 4px; background: rgba(0,0,0,.38);
       border-radius: 50%; position: absolute; bottom: 0; left: 7px; filter: blur(2px);
     }
-    .pin-outer:hover .pin-shape { transform: rotate(-45deg) scale(1.15); }
-    .pin-badge {
+    .pin-label {
       margin-top: 3px; font-size: 9px; padding: 2px 7px;
-      border-radius: 7px; border: 1px solid rgba(255,255,255,.12);
-      background: rgba(14,12,8,.93); white-space: nowrap;
-      letter-spacing: .04em; font-family: Georgia, serif; line-height: 1.5;
+      border-radius: 7px; border: 1px solid rgba(255,255,255,.1);
+      background: rgba(12,10,6,.92); white-space: nowrap;
+      letter-spacing: .04em; line-height: 1.5;
     }
     .pin-new { animation: pinPop .45s cubic-bezier(.34,1.56,.64,1) forwards; }
     @keyframes pinPop {
-      from { transform: scale(0) translateY(12px); opacity: 0; }
+      from { transform: scale(0) translateY(10px); opacity: 0; }
       to   { transform: scale(1) translateY(0);    opacity: 1; }
     }
     .pin-temp .pin-shape {
       background: radial-gradient(circle at 35% 35%, #999 0%, #666 100%) !important;
-      box-shadow: 0 0 8px rgba(150,150,150,.3) !important;
-      animation: pulse 1.4s ease-in-out infinite;
+      animation: tPulse 1.4s ease-in-out infinite;
     }
-    @keyframes pulse {
-      0%,100% { box-shadow: 0 0 8px rgba(150,150,150,.3) !important; }
-      50%      { box-shadow: 0 0 18px rgba(150,150,150,.7) !important; }
+    @keyframes tPulse {
+      0%,100% { box-shadow: 0 0 6px rgba(150,150,150,.3); }
+      50%      { box-shadow: 0 0 16px rgba(150,150,150,.7); }
     }
 
-    /* ── LEAFLET OVERRIDES ───────────────────────────── */
+    /* LEAFLET */
     .leaflet-control-zoom {
-      border: 1px solid rgba(255,255,255,.25) !important;
-      border-radius: 8px !important; overflow: hidden;
+      border: 1px solid rgba(0,0,0,.18) !important;
+      border-radius: 12px !important; overflow: hidden;
     }
     .leaflet-control-zoom a {
-      background: rgba(24,21,14,.92) !important;
-      color: var(--gold-mid) !important;
+      width: 40px !important; height: 40px !important;
+      line-height: 40px !important; font-size: 20px !important;
+      background: rgba(22,18,12,.92) !important;
+      color: var(--gmid) !important;
       border-bottom: 1px solid var(--border) !important;
     }
-    .leaflet-control-zoom a:hover {
-      background: rgba(36,30,18,.98) !important; color: var(--gold-hi) !important;
+    .leaflet-control-zoom a:last-child { border-bottom: none !important; }
+    .leaflet-bottom.leaflet-right {
+      bottom: max(112px, calc(env(safe-area-inset-bottom, 0px) + 100px)) !important;
+      right: 14px !important;
     }
-    .leaflet-bottom.leaflet-right { bottom: 16px; right: 16px; }
     .leaflet-control-attribution {
-      background: rgba(7,6,10,.72) !important;
-      color: var(--text-dim) !important; font-size: 10px !important;
+      font-size: 9px !important; background: rgba(7,6,10,.65) !important;
+      color: var(--t3) !important;
     }
-    .leaflet-control-attribution a { color: var(--gold-dim) !important; }
+    .leaflet-control-attribution a { color: var(--t3) !important; }
 
-    /* ── SCROLLBAR ───────────────────────────────────── */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+    ::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body>
 
-<!-- MAP -->
 <div id="map"></div>
+
+<!-- LOCATING -->
+<div id="locating">
+  <div class="loc-icon">📍</div>
+  <div class="loc-title">Locating you…</div>
+  <div class="loc-sub">Finding your position</div>
+  <div class="loc-spin"></div>
+</div>
 
 <!-- HEADER -->
 <header id="hdr">
-  <div id="hdr-left">
+  <div id="hdr-inner">
     <div id="app-name">I Know A Spot</div>
-    <div id="app-sub">Your personal atlas of atmosphere</div>
+    <div id="spot-count" onclick="openList()">0 spots</div>
   </div>
-  <div id="spot-count" onclick="togglePanel()">0 spots</div>
 </header>
 
-<!-- HINT -->
-<div id="hint">Click anywhere on the map to mark a spot</div>
-
-<!-- PANEL TOGGLE -->
-<button id="panel-toggle" onclick="togglePanel()">All Spots</button>
-
-<!-- SPOTS PANEL -->
-<div id="panel">
-  <div id="panel-head">Saved Spots</div>
-  <div id="panel-list"></div>
+<!-- BOTTOM BAR -->
+<div id="bottom-bar">
+  <button id="add-btn" onclick="addSpotHere()">
+    <span id="add-btn-icon">✦</span>
+    <span>ADD SPOT HERE</span>
+  </button>
+  <button id="locate-btn" onclick="centerOnUser()">📍</button>
 </div>
 
-<!-- ADD MODAL -->
-<div id="add-ov" class="overlay" onclick="ovClick(event,'add')">
-  <div class="modal" id="add-modal">
-    <div class="handle"></div>
-    <div class="modal-title">Mark This Spot</div>
+<!-- LIST SHEET -->
+<div id="list-ov" class="sov" onclick="listBgClick(event)">
+  <div class="sheet" id="list-sheet" style="max-height:82dvh">
+    <div class="drag-handle"></div>
+    <div class="list-hdr">
+      <div class="list-hdr-title">Your Spots</div>
+      <button class="list-close" onclick="closeList()">✕</button>
+    </div>
+    <div id="plist"></div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
+<!-- ADD SHEET -->
+<div id="add-ov" class="sov" onclick="bgDismiss(event,'add')">
+  <div class="sheet" id="add-modal">
+    <div class="drag-handle"></div>
+    <div class="sh-title">Mark This Spot</div>
+    <div class="sh-sub" id="add-sub">Your current location</div>
 
     <div class="fg">
       <label class="flabel" for="inp-name">Name</label>
-      <input id="inp-name" class="finput" type="text" placeholder="What do you call this place?" />
+      <input id="inp-name" class="finput" type="text"
+        placeholder="What do you call this place?" autocomplete="off" />
     </div>
-
     <div class="fg">
       <label class="flabel" for="inp-vibe">The Vibe</label>
-      <textarea id="inp-vibe" class="ftextarea" placeholder="Describe the atmosphere — what makes this place feel alive…"></textarea>
+      <textarea id="inp-vibe" class="ftextarea"
+        placeholder="Describe the atmosphere — what makes this place feel alive…"></textarea>
     </div>
-
     <div class="fg">
       <label class="flabel">Photos</label>
       <div class="upload-zone">
-        <input type="file" id="file-inp" accept="image/*" multiple onchange="onFileSelect(event)" />
+        <input type="file" id="file-inp" accept="image/*" multiple onchange="onFiles(event)" />
         <div class="upload-icon">📷</div>
         <div class="upload-txt">Tap to add photos (up to 5)</div>
       </div>
       <div class="previews" id="previews"></div>
     </div>
-
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeAdd()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSpot()">Save Spot</button>
     </div>
+    <div class="sh-gap"></div>
   </div>
 </div>
 
-<!-- RATE MODAL -->
-<div id="rate-ov" class="overlay" onclick="ovClick(event,'rate')">
-  <div class="modal" id="rate-modal">
-    <div class="handle"></div>
-    <div class="modal-title">How's the vibe?</div>
-    <div class="modal-sub" id="rate-spot-name"></div>
+<!-- RATE SHEET -->
+<div id="rate-ov" class="sov" onclick="bgDismiss(event,'rate')">
+  <div class="sheet" id="rate-modal">
+    <div class="drag-handle"></div>
+    <div class="sh-title">How's the vibe?</div>
+    <div class="sh-sub" id="rate-name"></div>
     <div class="rate-grid" id="rate-grid"></div>
-    <div class="btn-row" style="margin-top:16px">
-      <button class="btn btn-sec" onclick="skipRating()">Rate Later</button>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-sec" onclick="skipRate()">Rate Later</button>
     </div>
+    <div class="sh-gap"></div>
   </div>
 </div>
 
-<!-- VIEW MODAL -->
-<div id="view-ov" class="overlay" onclick="ovClick(event,'view')">
-  <div class="modal" id="view-modal">
-    <div class="handle"></div>
-    <div class="spot-hd" id="v-name"></div>
-    <div class="spot-meta" id="v-meta"></div>
+<!-- VIEW SHEET -->
+<div id="view-ov" class="sov" onclick="bgDismiss(event,'view')">
+  <div class="sheet" id="view-modal">
+    <div class="drag-handle"></div>
+    <div class="v-name" id="v-name"></div>
+    <div class="v-meta" id="v-meta"></div>
 
-    <!-- inline rating -->
     <div class="v-rate-section">
       <div class="v-rate-lbl">Rating</div>
       <div class="v-rate-row" id="v-rate-row"></div>
-      <div class="v-badge-now" id="v-badge-now"></div>
+      <div class="v-badge" id="v-badge"></div>
     </div>
 
-    <div class="spot-vibe" id="v-vibe"></div>
+    <div class="v-vibe" id="v-vibe"></div>
     <div class="gallery" id="v-gallery"></div>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeView()">Close</button>
       <button class="btn btn-del" onclick="delSpot()">Delete</button>
     </div>
+    <div class="sh-gap"></div>
   </div>
 </div>
 
@@ -459,415 +538,365 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// ─── RATING DATA ─────────────────────────────────────────────
 const RATINGS = {
-  0: { name: 'Unrated',       hi: '#aaaaaa', base: '#777777', glow: 'rgba(170,170,170,.4)',  ring: 'rgba(170,170,170,.18)', text: '#999999', stars: '' },
-  1: { name: 'Just a Place',  hi: '#c0c0c0', base: '#888888', glow: 'rgba(190,190,190,.45)', ring: 'rgba(190,190,190,.2)',  text: '#aaaaaa', stars: '★' },
-  2: { name: 'Has Potential', hi: '#74b9e8', base: '#2e86c1', glow: 'rgba(52,152,219,.5)',   ring: 'rgba(52,152,219,.22)', text: '#5aabee', stars: '★★' },
-  3: { name: 'Good Spot',     hi: '#f5a623', base: '#d17b10', glow: 'rgba(241,152,30,.5)',   ring: 'rgba(241,152,30,.22)', text: '#f5a623', stars: '★★★' },
-  4: { name: 'Great Spot',    hi: '#d7a8e8', base: '#8e44ad', glow: 'rgba(142,68,173,.5)',   ring: 'rgba(142,68,173,.22)', text: '#c07de0', stars: '★★★★' },
-  5: { name: 'THE Spot',      hi: '#f2c045', base: '#c8901c', glow: 'rgba(242,192,69,.55)',  ring: 'rgba(242,192,69,.22)', text: '#f2c045', stars: '★★★★★' },
+  0: { name:'Unrated',       hi:'#aaa',    base:'#777',    glow:'rgba(170,170,170,.38)', ring:'rgba(170,170,170,.18)', text:'#999',    stars:'' },
+  1: { name:'Just a Place',  hi:'#c0c0c0', base:'#888',    glow:'rgba(190,190,190,.42)', ring:'rgba(190,190,190,.2)',  text:'#aaa',    stars:'★' },
+  2: { name:'Has Potential', hi:'#74b9e8', base:'#2e86c1', glow:'rgba(52,152,219,.5)',   ring:'rgba(52,152,219,.22)', text:'#5aabee', stars:'★★' },
+  3: { name:'Good Spot',     hi:'#f5a623', base:'#d17b10', glow:'rgba(241,152,30,.5)',   ring:'rgba(241,152,30,.22)', text:'#f5a623', stars:'★★★' },
+  4: { name:'Great Spot',    hi:'#d7a8e8', base:'#8e44ad', glow:'rgba(142,68,173,.5)',   ring:'rgba(142,68,173,.22)', text:'#c07de0', stars:'★★★★' },
+  5: { name:'THE Spot',      hi:'#f2c045', base:'#c8901c', glow:'rgba(242,192,69,.55)',  ring:'rgba(242,192,69,.22)', text:'#f2c045', stars:'★★★★★' },
 };
 
-// ─── STATE ──────────────────────────────────────────────────
-let spots       = [];
-let markerMap   = {};
-let pendingLL   = null;
-let pendingPics = [];
-let activeSpotId = null;
-let ratingSpotId = null;
-let tempMarker  = null;
-let panelOpen   = false;
+// ── STATE ────────────────────────────────────────────────────
+let spots = [], markers = {}, pendingLL = null, pendingPics = [];
+let activeId = null, ratingId = null, tempMark = null;
+let curLoc = null, locMark = null, locCircle = null;
 
-// ─── STORAGE ────────────────────────────────────────────────
-function load()  { try { return JSON.parse(localStorage.getItem('ikas') || '[]'); } catch { return []; } }
-function persist() {
-  try { localStorage.setItem('ikas', JSON.stringify(spots)); }
-  catch { toast('Storage full — try removing large photos.'); }
-}
+// ── STORAGE ──────────────────────────────────────────────────
+const load    = () => { try { return JSON.parse(localStorage.getItem('ikas')||'[]'); } catch { return []; } };
+const persist = () => { try { localStorage.setItem('ikas', JSON.stringify(spots)); } catch { toast('Storage full.'); } };
 
-// ─── MAP ────────────────────────────────────────────────────
-const map = L.map('map', { center: [25, 15], zoom: 3, zoomControl: false });
-
+// ── MAP ──────────────────────────────────────────────────────
+const map = L.map('map', { center:[25,15], zoom:3, zoomControl:false });
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  subdomains: 'abcd', maxZoom: 19
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains:'abcd', maxZoom:19
 }).addTo(map);
-
-L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-navigator.geolocation && navigator.geolocation.getCurrentPosition(
-  p => map.setView([p.coords.latitude, p.coords.longitude], 13),
-  () => {}
-);
+L.control.zoom({ position:'bottomright' }).addTo(map);
 
 map.on('click', e => {
-  if (document.querySelector('.overlay.on')) return;
-  openAdd(e.latlng);
+  if (document.querySelector('.sov.on')) return;
+  openAdd(e.latlng, false);
 });
 
-// ─── ICON FACTORY ────────────────────────────────────────────
-function makeIcon(rating = 0, cls = '') {
-  const r = RATINGS[rating] || RATINGS[0];
-  const pinStyle = [
-    `background: radial-gradient(circle at 35% 35%, ${r.hi} 0%, ${r.base} 100%)`,
-    `box-shadow: 0 0 0 2px ${r.ring}, 0 0 13px ${r.glow}`
-  ].join(';');
+// ── GPS ──────────────────────────────────────────────────────
+function initGPS() {
+  if (!navigator.geolocation) { hideLocating('GPS unavailable — tap the map to add spots.'); return; }
 
-  const html = `<div class="pin-outer ${cls}">
-    <div class="pin-inner">
-      <div class="pin-shape" style="${pinStyle}"></div>
-      <div class="pin-shadow"></div>
-    </div>
-    <div class="pin-badge" style="color:${r.text};border-color:${r.ring}">${r.name}</div>
-  </div>`;
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
+      map.setView([curLoc.lat, curLoc.lng], 15, { animate: false });
+      putLocDot(p); hideLocating();
+    },
+    () => hideLocating('Location access denied.'),
+    { enableHighAccuracy: true, timeout: 9000 }
+  );
 
+  navigator.geolocation.watchPosition(
+    p => { curLoc = { lat:p.coords.latitude, lng:p.coords.longitude }; putLocDot(p); },
+    () => {},
+    { enableHighAccuracy: true, maximumAge: 4000 }
+  );
+
+  setTimeout(() => hideLocating(), 7000);
+}
+
+function putLocDot(p) {
+  const ll  = [p.coords.latitude, p.coords.longitude];
+  const acc = p.coords.accuracy || 25;
+  if (!locMark) {
+    const icon = L.divIcon({
+      className:'',
+      html:'<div class="uloc"><div class="uloc-ring"></div><div class="uloc-dot"></div></div>',
+      iconSize:[22,22], iconAnchor:[11,11]
+    });
+    locMark   = L.marker(ll, { icon, zIndexOffset:-200 }).addTo(map);
+    locCircle = L.circle(ll, { radius:acc, color:'#007AFF', opacity:.22, weight:1, fillColor:'#007AFF', fillOpacity:.06 }).addTo(map);
+  } else {
+    locMark.setLatLng(ll);
+    locCircle.setLatLng(ll).setRadius(acc);
+  }
+}
+
+function hideLocating(msg) {
+  document.getElementById('locating').classList.add('gone');
+  if (msg) setTimeout(() => toast(msg), 650);
+}
+
+function centerOnUser() {
+  if (curLoc) map.flyTo([curLoc.lat, curLoc.lng], Math.max(map.getZoom(), 16), { duration:.8 });
+  else toast('Still finding your location…');
+}
+
+// ── ADD SPOT HERE ────────────────────────────────────────────
+function addSpotHere() {
+  if (!curLoc) { toast('Still finding your location…'); return; }
+  openAdd(L.latLng(curLoc.lat, curLoc.lng), true);
+}
+
+// ── ICON ─────────────────────────────────────────────────────
+function makeIcon(rating=0, cls='') {
+  const r   = RATINGS[rating]||RATINGS[0];
+  const pin = `background:radial-gradient(circle at 35% 35%,${r.hi} 0%,${r.base} 100%);box-shadow:0 0 0 2px ${r.ring},0 0 12px ${r.glow}`;
   return L.divIcon({
-    className: '',
-    html,
-    iconSize: [26, 56],
-    iconAnchor: [13, 36],
-    popupAnchor: [0, -40]
+    className:'',
+    html:`<div class="pin-outer ${cls}">
+      <div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div>
+      <div class="pin-label" style="color:${r.text};border-color:${r.ring}">${r.name}</div>
+    </div>`,
+    iconSize:[26,56], iconAnchor:[13,36]
   });
 }
 
-// ─── MARKERS ────────────────────────────────────────────────
-function addMarker(spot, isNew = false) {
-  const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.rating || 0, isNew ? 'pin-new' : '') })
-    .addTo(map)
-    .on('click', () => openView(spot.id));
-  markerMap[spot.id] = m;
+function tempIcon() {
+  return L.divIcon({
+    className:'',
+    html:`<div class="pin-outer pin-temp"><div class="pin-body"><div class="pin-shape"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:#888">…</div></div>`,
+    iconSize:[26,56], iconAnchor:[13,36]
+  });
 }
 
-function refreshMarker(spotId) {
-  const spot = spots.find(s => s.id === spotId);
-  if (!spot || !markerMap[spotId]) return;
-  markerMap[spotId].setIcon(makeIcon(spot.rating || 0));
+function addMarker(s, isNew=false) {
+  const m = L.marker([s.lat,s.lng], { icon:makeIcon(s.rating||0, isNew?'pin-new':'') })
+    .addTo(map).on('click', ()=>openView(s.id));
+  markers[s.id] = m;
 }
 
-// ─── ADD MODAL ───────────────────────────────────────────────
-function openAdd(ll) {
-  pendingLL   = ll;
-  pendingPics = [];
-  document.getElementById('inp-name').value  = '';
-  document.getElementById('inp-vibe').value  = '';
+function refreshMarker(id) {
+  const s = spots.find(x=>x.id===id);
+  if (s && markers[id]) markers[id].setIcon(makeIcon(s.rating||0));
+}
+
+// ── ADD SHEET ────────────────────────────────────────────────
+function openAdd(ll, fromBtn=false) {
+  pendingLL = ll; pendingPics = [];
+  document.getElementById('inp-name').value = '';
+  document.getElementById('inp-vibe').value = '';
   document.getElementById('previews').innerHTML = '';
-  document.getElementById('file-inp').value  = '';
+  document.getElementById('file-inp').value = '';
   document.getElementById('inp-name').classList.remove('err');
 
-  if (tempMarker) map.removeLayer(tempMarker);
-  tempMarker = L.marker([ll.lat, ll.lng], { icon: makeIconTemp() }).addTo(map);
+  const sub = document.getElementById('add-sub');
+  if (fromBtn) {
+    sub.textContent = 'Your current location';
+  } else {
+    sub.textContent = `${Math.abs(ll.lat).toFixed(4)}°${ll.lat>=0?'N':'S'}, ${Math.abs(ll.lng).toFixed(4)}°${ll.lng>=0?'E':'W'}`;
+    if (tempMark) map.removeLayer(tempMark);
+    tempMark = L.marker([ll.lat,ll.lng], { icon:tempIcon() }).addTo(map);
+  }
 
   document.getElementById('add-ov').classList.add('on');
-  setTimeout(() => document.getElementById('inp-name').focus(), 380);
-  document.getElementById('hint').classList.add('gone');
-}
-
-function makeIconTemp() {
-  return L.divIcon({
-    className: '',
-    html: `<div class="pin-outer pin-temp">
-      <div class="pin-inner"><div class="pin-shape"></div><div class="pin-shadow"></div></div>
-      <div class="pin-badge" style="color:#888">…</div>
-    </div>`,
-    iconSize: [26, 56], iconAnchor: [13, 36]
-  });
+  setTimeout(() => document.getElementById('inp-name').focus(), 420);
 }
 
 function closeAdd() {
   document.getElementById('add-ov').classList.remove('on');
-  if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+  if (tempMark) { map.removeLayer(tempMark); tempMark = null; }
   pendingLL = null; pendingPics = [];
 }
 
-// ─── PHOTO HANDLING ──────────────────────────────────────────
-async function onFileSelect(e) {
+// ── PHOTOS ───────────────────────────────────────────────────
+async function onFiles(e) {
   for (const f of e.target.files) {
     if (pendingPics.length >= 5) break;
     pendingPics.push(await compress(f));
-    renderPreviews();
+    renderPics();
   }
   e.target.value = '';
 }
-
-function renderPreviews() {
-  document.getElementById('previews').innerHTML = pendingPics.map((src, i) => `
+function renderPics() {
+  document.getElementById('previews').innerHTML = pendingPics.map((src,i)=>`
     <div class="prev-item">
-      <img src="${src}" />
+      <img src="${src}"/>
       <button class="prev-rm" onclick="rmPic(${i})">✕</button>
     </div>`).join('');
 }
-
-function rmPic(i) { pendingPics.splice(i, 1); renderPreviews(); }
-
-function compress(file, maxW = 920, q = .76) {
+function rmPic(i) { pendingPics.splice(i,1); renderPics(); }
+function compress(file, maxW=920, q=.76) {
   return new Promise(res => {
-    const r = new FileReader();
-    r.onload = ev => {
+    const rd = new FileReader();
+    rd.onload = ev => {
       const img = new Image();
       img.onload = () => {
-        let w = img.width, h = img.height;
-        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
-        res(c.toDataURL('image/jpeg', q));
+        let w=img.width, h=img.height;
+        if (w>maxW) { h=Math.round(h*maxW/w); w=maxW; }
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        res(c.toDataURL('image/jpeg',q));
       };
-      img.src = ev.target.result;
+      img.src=ev.target.result;
     };
-    r.readAsDataURL(file);
+    rd.readAsDataURL(file);
   });
 }
 
-// ─── SAVE SPOT ───────────────────────────────────────────────
+// ── SAVE ─────────────────────────────────────────────────────
 function saveSpot() {
   const name = document.getElementById('inp-name').value.trim();
   if (!name) {
     const el = document.getElementById('inp-name');
     el.classList.add('err'); el.focus();
-    setTimeout(() => el.classList.remove('err'), 1400);
+    setTimeout(()=>el.classList.remove('err'), 1400);
     return;
   }
-
-  const spot = {
-    id:        Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    name,
-    vibe:      document.getElementById('inp-vibe').value.trim(),
-    photos:    [...pendingPics],
-    rating:    0,
-    lat:       pendingLL.lat,
-    lng:       pendingLL.lng,
+  const s = {
+    id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    name, rating:0,
+    vibe: document.getElementById('inp-vibe').value.trim(),
+    photos: [...pendingPics],
+    lat: pendingLL.lat, lng: pendingLL.lng,
     createdAt: new Date().toISOString()
   };
-
-  spots.push(spot);
-  persist();
-
-  if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
-  addMarker(spot, true);
-  updateCount();
-  renderPanel();
-  closeAdd();
-
-  // Immediately prompt for a rating
-  openRateModal(spot.id);
+  spots.push(s); persist();
+  if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
+  addMarker(s, true);
+  updateCount(); renderList();
+  closeAdd(); openRate(s.id);
 }
 
-// ─── RATE MODAL ──────────────────────────────────────────────
-function openRateModal(spotId) {
-  ratingSpotId = spotId;
-  const spot = spots.find(s => s.id === spotId);
-  document.getElementById('rate-spot-name').textContent = spot ? `"${spot.name}"` : '';
-
+// ── RATE SHEET ───────────────────────────────────────────────
+function openRate(id) {
+  ratingId = id;
+  const s = spots.find(x=>x.id===id);
+  document.getElementById('rate-name').textContent = s ? `"${s.name}"` : '';
   document.getElementById('rate-grid').innerHTML = [1,2,3,4,5].map(n => {
     const r = RATINGS[n];
-    return `<div class="rate-opt" onclick="applyRating(${n})"
-      onmouseenter="this.style.borderColor='${r.text}';this.style.background='rgba(${hexToRgb(r.base)},.12)'"
-      onmouseleave="this.style.borderColor='';this.style.background=''">
-      <div class="rate-dot" style="background:${r.base};box-shadow:0 0 6px ${r.glow}"></div>
-      <div class="rate-info">
-        <div class="rate-badge-name">${r.name}</div>
-        <div class="rate-stars-txt">${r.stars}</div>
-      </div>
+    return `<div class="rate-opt" onclick="applyRate(${n})">
+      <div class="rate-dot" style="background:${r.base};box-shadow:0 0 7px ${r.glow}"></div>
+      <div><div class="rate-name">${r.name}</div><div class="rate-stars">${r.stars||'—'}</div></div>
     </div>`;
   }).join('');
-
   document.getElementById('rate-ov').classList.add('on');
 }
 
-function applyRating(n) {
-  if (!ratingSpotId) return;
-  const spot = spots.find(s => s.id === ratingSpotId);
-  if (!spot) return;
-  spot.rating = n;
-  persist();
-  refreshMarker(ratingSpotId);
-  renderPanel();
-
-  // If the view modal is open for this spot, refresh its rating UI
-  if (activeSpotId === ratingSpotId) renderViewRating(spot);
-
-  closeRateModal();
-  toast(`Rated "${spot.name}" — ${RATINGS[n].name}`);
-}
-
-function skipRating() { closeRateModal(); }
-
-function closeRateModal() {
-  document.getElementById('rate-ov').classList.remove('on');
-  ratingSpotId = null;
-}
-
-// ─── VIEW MODAL ──────────────────────────────────────────────
-function openView(id) {
-  const s = spots.find(x => x.id === id);
+function applyRate(n) {
+  if (!ratingId) return;
+  const s = spots.find(x=>x.id===ratingId);
   if (!s) return;
-  activeSpotId = id;
+  s.rating = n; persist();
+  refreshMarker(ratingId); renderList();
+  if (activeId === ratingId) renderViewRating(s);
+  closeRate(); toast(RATINGS[n].name);
+}
 
+function skipRate()  { closeRate(); }
+function closeRate() { document.getElementById('rate-ov').classList.remove('on'); ratingId=null; }
+
+// ── VIEW SHEET ───────────────────────────────────────────────
+function openView(id) {
+  const s = spots.find(x=>x.id===id);
+  if (!s) return;
+  activeId = id;
   document.getElementById('v-name').textContent = s.name;
-
   const d = new Date(s.createdAt);
-  const coord = `${Math.abs(s.lat).toFixed(4)}°${s.lat >= 0 ? 'N' : 'S'}  ${Math.abs(s.lng).toFixed(4)}°${s.lng >= 0 ? 'E' : 'W'}`;
   document.getElementById('v-meta').textContent =
-    `${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}  ·  ${coord}`;
-
+    `${d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}  ·  `+
+    `${Math.abs(s.lat).toFixed(4)}°${s.lat>=0?'N':'S'} ${Math.abs(s.lng).toFixed(4)}°${s.lng>=0?'E':'W'}`;
   renderViewRating(s);
-
   const vibeEl = document.getElementById('v-vibe');
-  vibeEl.textContent = s.vibe || '';
-  vibeEl.style.display = s.vibe ? '' : 'none';
-
+  vibeEl.textContent = s.vibe||''; vibeEl.style.display = s.vibe?'':'none';
   const gal = document.getElementById('v-gallery');
-  gal.className = 'gallery' + (s.photos.length === 1 ? ' solo' : '');
-  gal.innerHTML = s.photos.map((src, i) =>
-    `<img class="gphoto" src="${src}" alt="photo ${i+1}" onclick="openLb(${i})" />`
-  ).join('');
-
+  const n = s.photos.length;
+  gal.className = 'gallery'+(n===1?' g1':n===2?' g2':'');
+  gal.innerHTML = s.photos.map((src,i)=>`<img class="gphoto" src="${src}" onclick="openLb(${i})"/>`).join('');
   document.getElementById('view-ov').classList.add('on');
 }
 
 function renderViewRating(s) {
-  const cur = s.rating || 0;
+  const cur = s.rating||0;
   document.getElementById('v-rate-row').innerHTML = [1,2,3,4,5].map(n => {
-    const r  = RATINGS[n];
-    const active = n === cur;
-    const style = active
-      ? `border-color:${r.text};background:rgba(${hexToRgb(r.base)},.18);color:${r.text}`
+    const r=RATINGS[n], active=n===cur;
+    const st=active
+      ? `border-color:${r.text};background:rgba(${rgb(r.base)},.18);color:${r.text}`
       : `color:${r.text}`;
-    return `<button class="v-ropt${active ? ' active' : ''}" style="${style}"
-      onclick="changeRatingInline(${n})" title="${r.name}">${n}</button>`;
+    return `<button class="v-ropt" style="${st}" onclick="rateInline(${n})">${n}</button>`;
   }).join('');
-
-  const cr = RATINGS[cur];
-  const badgeEl = document.getElementById('v-badge-now');
-  badgeEl.textContent  = cur > 0 ? `${cr.stars}  ${cr.name}` : 'Not yet rated';
-  badgeEl.style.color  = cur > 0 ? cr.text : 'var(--text-dim)';
+  const cr=RATINGS[cur], el=document.getElementById('v-badge');
+  el.textContent = cur>0 ? `${cr.stars}  ${cr.name}` : 'Not yet rated';
+  el.style.color  = cur>0 ? cr.text : 'var(--t3)';
 }
 
-function changeRatingInline(n) {
-  if (!activeSpotId) return;
-  const spot = spots.find(s => s.id === activeSpotId);
-  if (!spot) return;
-
-  // Toggle off if same rating clicked
-  spot.rating = (spot.rating === n) ? 0 : n;
-  persist();
-  refreshMarker(activeSpotId);
-  renderPanel();
-  renderViewRating(spot);
+function rateInline(n) {
+  if (!activeId) return;
+  const s=spots.find(x=>x.id===activeId); if (!s) return;
+  s.rating = (s.rating===n)?0:n;
+  persist(); refreshMarker(activeId); renderList(); renderViewRating(s);
 }
 
-function closeView() {
-  document.getElementById('view-ov').classList.remove('on');
-  activeSpotId = null;
-}
+function closeView() { document.getElementById('view-ov').classList.remove('on'); activeId=null; }
 
-// ─── DELETE ──────────────────────────────────────────────────
+// ── DELETE ───────────────────────────────────────────────────
 function delSpot() {
-  if (!activeSpotId || !confirm('Remove this spot from your atlas?')) return;
-  const id = activeSpotId;
-  spots = spots.filter(s => s.id !== id);
-  persist();
-  if (markerMap[id]) { map.removeLayer(markerMap[id]); delete markerMap[id]; }
-  updateCount();
-  renderPanel();
-  closeView();
+  if (!activeId||!confirm('Remove this spot?')) return;
+  const id=activeId;
+  spots=spots.filter(s=>s.id!==id); persist();
+  if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+  updateCount(); renderList(); closeView();
 }
 
-// ─── LIGHTBOX ────────────────────────────────────────────────
+// ── LIGHTBOX ─────────────────────────────────────────────────
 function openLb(i) {
-  const s = spots.find(x => x.id === activeSpotId);
-  if (!s) return;
-  document.getElementById('lb-img').src = s.photos[i];
+  const s=spots.find(x=>x.id===activeId); if (!s) return;
+  document.getElementById('lb-img').src=s.photos[i];
   document.getElementById('lb').classList.add('on');
 }
 function closeLb() { document.getElementById('lb').classList.remove('on'); }
 
-// ─── PANEL ───────────────────────────────────────────────────
-function togglePanel() {
-  panelOpen = !panelOpen;
-  document.getElementById('panel').classList.toggle('open', panelOpen);
-}
+// ── LIST SHEET ───────────────────────────────────────────────
+function openList()  { renderList(); document.getElementById('list-ov').classList.add('on'); }
+function closeList() { document.getElementById('list-ov').classList.remove('on'); }
+function listBgClick(e) { if (!document.getElementById('list-sheet').contains(e.target)) closeList(); }
 
-function renderPanel() {
-  const el = document.getElementById('panel-list');
-  if (!spots.length) {
-    el.innerHTML = '<div class="empty-panel">No spots yet.<br>Click the map to mark your first.</div>';
-    return;
-  }
-  el.innerHTML = [...spots].reverse().map(s => {
-    const r = RATINGS[s.rating || 0];
+function renderList() {
+  const el=document.getElementById('plist');
+  if (!spots.length) { el.innerHTML='<div class="empty-list">No spots yet.<br>Tap ADD SPOT HERE to mark your first.</div>'; return; }
+  el.innerHTML=[...spots].reverse().map(s=>{
+    const r=RATINGS[s.rating||0];
     return `<div class="pitem" onclick="flyTo('${s.id}')">
       <div class="pitem-dot" style="background:${r.base};box-shadow:0 0 5px ${r.glow}"></div>
-      <div class="pitem-text">
-        <div class="pitem-name">${esc(s.name)}</div>
-        <div class="pitem-badge" style="color:${r.text}">${r.name}</div>
-      </div>
+      <div><div class="pitem-name">${esc(s.name)}</div><div class="pitem-badge" style="color:${r.text}">${r.name}</div></div>
     </div>`;
   }).join('');
 }
 
 function flyTo(id) {
-  const s = spots.find(x => x.id === id);
-  if (!s) return;
-  if (panelOpen) togglePanel();
-  map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 14), { duration: 1.2 });
-  setTimeout(() => openView(id), 1350);
+  const s=spots.find(x=>x.id===id); if (!s) return;
+  closeList();
+  map.flyTo([s.lat,s.lng], Math.max(map.getZoom(),15), {duration:1.0});
+  setTimeout(()=>openView(id), 1150);
 }
 
-// ─── OVERLAY CLICK-OUTSIDE ────────────────────────────────────
-function ovClick(e, type) {
-  const modal = document.getElementById(type + '-modal');
-  if (!modal.contains(e.target)) {
-    if (type === 'add')  closeAdd();
-    else if (type === 'rate') skipRating();
-    else if (type === 'view') closeView();
+// ── OVERLAYS ─────────────────────────────────────────────────
+function bgDismiss(e, type) {
+  const ids = { add:'add-modal', rate:'rate-modal', view:'view-modal' };
+  if (!document.getElementById(ids[type]).contains(e.target)) {
+    if (type==='add') closeAdd();
+    else if (type==='rate') skipRate();
+    else closeView();
   }
 }
 
-// ─── TOAST ───────────────────────────────────────────────────
-let toastTimer;
+// ── TOAST ────────────────────────────────────────────────────
+let toastT;
 function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('on'),2500);
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────
+// ── HELPERS ──────────────────────────────────────────────────
 function updateCount() {
-  const n = spots.length;
-  document.getElementById('spot-count').textContent = `${n} spot${n !== 1 ? 's' : ''}`;
+  const n=spots.length;
+  document.getElementById('spot-count').textContent=`${n} spot${n!==1?'s':''}`;
 }
+function esc(s) { const d=document.createElement('div'); d.appendChild(document.createTextNode(s||'')); return d.innerHTML; }
+function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>16)&255},${(n>>8)&255},${n&255}`; }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.appendChild(document.createTextNode(s || ''));
-  return d.innerHTML;
-}
-
-function hexToRgb(hex) {
-  const h = hex.replace('#','');
-  const n = parseInt(h, 16);
-  return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
-}
-
-// ─── KEYBOARD ────────────────────────────────────────────────
+// ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  if (document.getElementById('lb').classList.contains('on'))      { closeLb();       return; }
-  if (document.getElementById('view-ov').classList.contains('on')) { closeView();     return; }
-  if (document.getElementById('rate-ov').classList.contains('on')) { skipRating();    return; }
-  if (document.getElementById('add-ov').classList.contains('on'))  { closeAdd();      return; }
-  if (panelOpen) togglePanel();
+  if (e.key!=='Escape') return;
+  if (document.getElementById('lb').classList.contains('on'))      { closeLb();    return; }
+  if (document.getElementById('view-ov').classList.contains('on')) { closeView();  return; }
+  if (document.getElementById('rate-ov').classList.contains('on')) { skipRate();   return; }
+  if (document.getElementById('add-ov').classList.contains('on'))  { closeAdd();   return; }
+  if (document.getElementById('list-ov').classList.contains('on')) { closeList();  return; }
 });
 
-// ─── INIT ─────────────────────────────────────────────────────
+// ── INIT ─────────────────────────────────────────────────────
 spots = load();
 spots.forEach(s => addMarker(s));
-updateCount();
-renderPanel();
-if (spots.length) document.getElementById('hint').classList.add('gone');
+updateCount(); renderList(); initGPS();
 </script>
 </body>
 </html>
