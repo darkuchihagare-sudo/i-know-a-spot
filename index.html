@@ -124,15 +124,6 @@
       animation: spin .75s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loc-skip {
-      display: none; margin-top: 24px; padding: 12px 28px;
-      background: transparent; border: 1.5px solid var(--bhi);
-      border-radius: 14px; color: var(--t2); font-size: 15px; font-weight: 600;
-      font-family: var(--sys); cursor: pointer; touch-action: manipulation;
-      transition: border-color .18s, color .18s;
-    }
-    #loc-skip:active { border-color: var(--gold); color: var(--gmid); }
-
     /* HEADER */
     #hdr {
       position: fixed; top: 0; left: 0; right: 0; z-index: 900;
@@ -645,7 +636,6 @@
   <div class="loc-title">Locating you…</div>
   <div class="loc-sub">Finding your position</div>
   <div class="loc-spin"></div>
-  <button id="loc-skip" onclick="useDefaultLocation()">Use Default Location</button>
 </div>
 
 <!-- HEADER -->
@@ -830,9 +820,7 @@ const RATINGS = {
 };
 
 // ── DEFAULTS ─────────────────────────────────────────────────
-const DEFAULT_LOC = { lat: 44.4268, lng: 26.1025 }; // Bucharest, Romania
-const GPS_OPTS    = { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 };
-let gpsTimers = [];
+const GPS_OPTS = { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 };
 
 // ── FRIEND PIN COLOUR ────────────────────────────────────────
 const FPIN = { hi:'#b8daf5', base:'#4a90d9', glow:'rgba(74,144,217,.5)', ring:'rgba(74,144,217,.25)', text:'#8bbce8' };
@@ -860,48 +848,6 @@ map.on('click', e => {
 });
 
 // ── GPS ──────────────────────────────────────────────────────
-function useDefaultLocation() {
-  gpsTimers.forEach(clearTimeout); gpsTimers = [];
-  document.getElementById('loc-skip').style.display = 'none';
-  if (!curLoc) {
-    curLoc = { ...DEFAULT_LOC };
-    map.setView([curLoc.lat, curLoc.lng], 12, { animate: false });
-  }
-  hideLocating();
-}
-
-function initGPS() {
-  if (!navigator.geolocation) { useDefaultLocation(); return; }
-
-  // After 5 s show the skip button so the user isn't stuck
-  gpsTimers.push(setTimeout(() => {
-    document.getElementById('loc-skip').style.display = '';
-  }, 5000));
-
-  // After 10 s give up and fall back to default location
-  gpsTimers.push(setTimeout(() => useDefaultLocation(), 10000));
-
-  navigator.geolocation.getCurrentPosition(
-    p => {
-      gpsTimers.forEach(clearTimeout); gpsTimers = [];
-      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
-      map.setView([curLoc.lat, curLoc.lng], 15, { animate: false });
-      putLocDot(p); hideLocating();
-    },
-    () => {
-      gpsTimers.forEach(clearTimeout); gpsTimers = [];
-      useDefaultLocation();
-    },
-    GPS_OPTS
-  );
-
-  navigator.geolocation.watchPosition(
-    p => { curLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; putLocDot(p); },
-    () => {},
-    GPS_OPTS
-  );
-}
-
 function putLocDot(p) {
   const ll=[p.coords.latitude, p.coords.longitude], acc=p.coords.accuracy||25;
   if (!locMark) {
@@ -914,22 +860,46 @@ function putLocDot(p) {
   } else { locMark.setLatLng(ll); locCircle.setLatLng(ll).setRadius(acc); }
 }
 
-function hideLocating(msg) {
-  gpsTimers.forEach(clearTimeout); gpsTimers = [];
-  document.getElementById('loc-skip').style.display = 'none';
+function hideLocating() {
   document.getElementById('locating').classList.add('gone');
-  if (msg) setTimeout(()=>toast(msg), 650);
 }
 
 function centerOnUser() {
-  if (curLoc) map.flyTo([curLoc.lat,curLoc.lng], Math.max(map.getZoom(),16), {duration:.8});
-  else toast('Still finding your location…');
+  if (!navigator.geolocation) { toast('Geolocation not supported'); return; }
+  const btn = document.getElementById('locate-btn');
+  const orig = btn.textContent;
+  btn.textContent = '…';
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      btn.textContent = orig;
+      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
+      putLocDot(p);
+      map.flyTo([curLoc.lat, curLoc.lng], Math.max(map.getZoom(), 16), { duration: .8 });
+    },
+    () => { btn.textContent = orig; toast('Could not get your location'); },
+    GPS_OPTS
+  );
 }
 
 // ── ADD SPOT HERE ────────────────────────────────────────────
 function addSpotHere() {
-  if (!curLoc) { toast('Still finding your location…'); return; }
-  openAdd(L.latLng(curLoc.lat, curLoc.lng), true);
+  if (!navigator.geolocation) { toast('Geolocation not supported'); return; }
+  const btn = document.getElementById('add-btn');
+  const icon = document.getElementById('add-btn-icon');
+  btn.disabled = true; icon.textContent = '…';
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      btn.disabled = false; icon.textContent = '✦';
+      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
+      putLocDot(p);
+      openAdd(L.latLng(curLoc.lat, curLoc.lng), true);
+    },
+    () => {
+      btn.disabled = false; icon.textContent = '✦';
+      toast('Could not get your location — tap the map instead');
+    },
+    GPS_OPTS
+  );
 }
 
 // ── ICONS ────────────────────────────────────────────────────
@@ -1542,10 +1512,9 @@ function init() {
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'INITIAL_SESSION') {
       // Fires once on every page load with the stored session (or null)
-      document.getElementById('locating').classList.add('gone');
+      hideLocating();
       if (session) {
         await setupApp(session);
-        initGPS();
       } else {
         showAuthScreen();
       }
@@ -1553,7 +1522,6 @@ function init() {
       // Fires after login or signup (when email confirmation is off)
       hideAuthScreen();
       await setupApp(session);
-      if (!locMark) initGPS();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
