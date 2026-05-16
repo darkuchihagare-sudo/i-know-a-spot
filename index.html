@@ -12,8 +12,8 @@
       rating SMALLINT DEFAULT 0,
       latitude DOUBLE PRECISION NOT NULL,
       longitude DOUBLE PRECISION NOT NULL,
+      photos TEXT[] DEFAULT '{}',
       created_at TIMESTAMPTZ DEFAULT NOW()
-      -- To enable photos: ALTER TABLE public.spots ADD COLUMN photos TEXT[] DEFAULT '{}';
     );
     ALTER TABLE public.spots ENABLE ROW LEVEL SECURITY;
     CREATE POLICY "Users manage own spots" ON public.spots
@@ -749,7 +749,42 @@
     <div class="gallery" id="v-gallery"></div>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeView()">Close</button>
+      <button id="edit-btn" class="btn btn-primary" onclick="openEditFromView()">Edit</button>
       <button id="del-btn" class="btn btn-del" onclick="delSpot()">Delete</button>
+    </div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
+<!-- EDIT SHEET -->
+<div id="edit-ov" class="sov" onclick="bgDismiss(event,'edit')">
+  <div class="sheet" id="edit-modal">
+    <div class="drag-handle"></div>
+    <div class="sh-title">Edit Spot</div>
+    <div class="fg">
+      <label class="flabel" for="edit-name">Name</label>
+      <input id="edit-name" class="finput" type="text"
+        placeholder="Spot name" autocomplete="off" />
+    </div>
+    <div class="fg">
+      <label class="flabel" for="edit-desc">The Vibe</label>
+      <textarea id="edit-desc" class="ftextarea"
+        placeholder="Describe the atmosphere…"></textarea>
+    </div>
+    <div class="fg">
+      <label class="flabel">Rating</label>
+      <div id="edit-rate-grid" class="rate-grid" style="padding:0"></div>
+    </div>
+    <div class="fg">
+      <label class="flabel">Location</label>
+      <div id="edit-loc-display" style="font-size:13px;color:var(--t2);margin-bottom:10px;font-style:italic"></div>
+      <button class="btn btn-sec" onclick="moveSpotToCurrentLocation()" style="width:100%">
+        📍 Move to Current GPS Location
+      </button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeEdit()">Cancel</button>
+      <button class="btn btn-primary" id="edit-save-btn" onclick="saveEdit()">Save Changes</button>
     </div>
     <div class="sh-gap"></div>
   </div>
@@ -1037,6 +1072,20 @@ async function saveSpot() {
 
   btn.disabled=false; btn.textContent='Save Spot';
 
+  // Upload any pending photos to storage and save paths
+  if (pendingPics.length > 0) {
+    const paths = [];
+    for (const pic of pendingPics) {
+      const path = `${currentUser.id}/${row.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error: upErr } = await sb.storage.from(BUCKET).upload(path, pic.blob, { contentType: 'image/jpeg' });
+      if (!upErr) paths.push(path);
+    }
+    if (paths.length) {
+      await sb.from('spots').update({ photos: paths }).eq('id', row.id);
+      row.photos = paths;
+    }
+  }
+
   spots.push(row);
   if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
   addMarker(row, true);
@@ -1091,8 +1140,20 @@ function openView(id) {
   renderViewRating(s);
   const descEl=document.getElementById('v-description');
   descEl.textContent=s.description||''; descEl.style.display=s.description?'':'none';
-  document.getElementById('v-gallery').innerHTML='';
+  const gallery=document.getElementById('v-gallery');
+  const photos=s.photos||[];
+  if (photos.length) {
+    const cnt=Math.min(photos.length,3);
+    gallery.className=`gallery g${cnt}`;
+    gallery.innerHTML=photos.map((p,i)=>
+      `<img class="gphoto" src="${photoSrc(p)}" loading="lazy" onclick="openLb(${i})" />`
+    ).join('');
+  } else {
+    gallery.className='gallery';
+    gallery.innerHTML='';
+  }
   document.getElementById('del-btn').style.display=isOwn?'':'none';
+  document.getElementById('edit-btn').style.display=isOwn?'':'none';
   document.getElementById('view-ov').classList.add('on');
 }
 
@@ -1141,7 +1202,7 @@ async function delSpot() {
 
 // ── LIGHTBOX ─────────────────────────────────────────────────
 function openLb(i) {
-  const s=spots.find(x=>x.id===activeId); if (!s) return;
+  const s=spots.find(x=>x.id===activeId)||friendModeSpots.find(x=>x.id===activeId); if (!s) return;
   if (!s.photos?.length) return;
   document.getElementById('lb-img').src=photoSrc(s.photos[i]);
   document.getElementById('lb').classList.add('on');
@@ -1178,10 +1239,11 @@ function flyTo(id) {
 
 // ── OVERLAYS ─────────────────────────────────────────────────
 function bgDismiss(e, type) {
-  const ids={add:'add-modal',rate:'rate-modal',view:'view-modal'};
+  const ids={add:'add-modal',rate:'rate-modal',view:'view-modal',edit:'edit-modal'};
   if (!document.getElementById(ids[type]).contains(e.target)) {
     if (type==='add') closeAdd();
     else if (type==='rate') skipRate();
+    else if (type==='edit') closeEdit();
     else closeView();
   }
 }
@@ -1208,6 +1270,7 @@ document.addEventListener('keydown', e => {
   if (friendModeActive)                                                 { exitFriendMapMode(); return; }
   if (document.getElementById('fp-ov').classList.contains('on'))       { closeFriendProfile(); return; }
   if (document.getElementById('lb').classList.contains('on'))         { closeLb();      return; }
+  if (document.getElementById('edit-ov').classList.contains('on'))    { closeEdit();    return; }
   if (document.getElementById('view-ov').classList.contains('on'))    { closeView();    return; }
   if (document.getElementById('rate-ov').classList.contains('on'))    { skipRate();     return; }
   if (document.getElementById('add-ov').classList.contains('on'))     { closeAdd();     return; }
@@ -1495,6 +1558,104 @@ async function loadSpots() {
   spots=data||[];
   spots.forEach(s=>addMarker(s));
   updateCount(); renderList();
+}
+
+// ── EDIT SHEET ───────────────────────────────────────────────
+let editId = null, editLL = null, editRating = 0;
+
+function openEditFromView() {
+  const id = activeId;
+  closeView();
+  openEdit(id);
+}
+
+function openEdit(id) {
+  const s = spots.find(x => x.id === id); if (!s) return;
+  editId = id;
+  editLL = { lat: s.latitude, lng: s.longitude };
+  editRating = s.rating || 0;
+  document.getElementById('edit-name').value = s.name;
+  document.getElementById('edit-desc').value = s.description || '';
+  updateEditLocDisplay();
+  renderEditRateGrid();
+  document.getElementById('edit-ov').classList.add('on');
+}
+
+function updateEditLocDisplay() {
+  const el = document.getElementById('edit-loc-display');
+  el.textContent = editLL
+    ? `${Math.abs(editLL.lat).toFixed(4)}°${editLL.lat>=0?'N':'S'}, ${Math.abs(editLL.lng).toFixed(4)}°${editLL.lng>=0?'E':'W'}`
+    : '';
+}
+
+function renderEditRateGrid() {
+  document.getElementById('edit-rate-grid').innerHTML = [1,2,3,4,5].map(n => {
+    const r = RATINGS[n];
+    const active = n === editRating;
+    const border = active ? `border-color:${r.text};background:rgba(${rgb(r.base)},.18)` : '';
+    return `<div class="rate-opt" style="${border}" onclick="setEditRating(${n})">
+      <div class="rate-dot" style="background:${r.base};box-shadow:0 0 7px ${r.glow}"></div>
+      <div><div class="rate-name" style="${active?`color:${r.text}`:''}">${r.name}</div><div class="rate-stars">${r.stars||'—'}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function setEditRating(n) {
+  editRating = (editRating === n) ? 0 : n;
+  renderEditRateGrid();
+}
+
+function moveSpotToCurrentLocation() {
+  if (!navigator.geolocation) { toast('Geolocation not supported'); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      editLL = { lat: p.coords.latitude, lng: p.coords.longitude };
+      updateEditLocDisplay();
+      toast('Location updated');
+    },
+    () => toast('Could not get your location'),
+    GPS_OPTS
+  );
+}
+
+async function saveEdit() {
+  if (!editId) return;
+  const name = document.getElementById('edit-name').value.trim();
+  if (!name) {
+    const el = document.getElementById('edit-name');
+    el.classList.add('err'); el.focus();
+    setTimeout(() => el.classList.remove('err'), 1400);
+    return;
+  }
+  const btn = document.getElementById('edit-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const desc = document.getElementById('edit-desc').value.trim();
+  const { error } = await sb.from('spots').update({
+    name,
+    description: desc,
+    rating: editRating,
+    latitude: editLL.lat,
+    longitude: editLL.lng
+  }).eq('id', editId);
+  btn.disabled = false; btn.textContent = 'Save Changes';
+  if (error) { toast('Failed to save changes'); return; }
+  const s = spots.find(x => x.id === editId);
+  if (s) {
+    s.name = name; s.description = desc;
+    s.rating = editRating;
+    s.latitude = editLL.lat; s.longitude = editLL.lng;
+    if (markers[editId]) markers[editId].setLatLng([editLL.lat, editLL.lng]);
+    refreshMarker(editId); renderList();
+  }
+  const id = editId;
+  closeEdit();
+  openView(id);
+  toast('Spot updated');
+}
+
+function closeEdit() {
+  document.getElementById('edit-ov').classList.remove('on');
+  editId = null; editLL = null;
 }
 
 // ── INIT ─────────────────────────────────────────────────────
