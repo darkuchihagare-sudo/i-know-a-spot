@@ -631,7 +631,7 @@
 </div>
 
 <!-- LOCATING -->
-<div id="locating">
+<div id="locating" class="gone">
   <div class="loc-icon">📍</div>
   <div class="loc-title">Locating you…</div>
   <div class="loc-sub">Finding your position</div>
@@ -858,10 +858,6 @@ function putLocDot(p) {
     locMark=L.marker(ll,{icon,zIndexOffset:-200}).addTo(map);
     locCircle=L.circle(ll,{radius:acc,color:'#007AFF',opacity:.22,weight:1,fillColor:'#007AFF',fillOpacity:.06}).addTo(map);
   } else { locMark.setLatLng(ll); locCircle.setLatLng(ll).setRadius(acc); }
-}
-
-function hideLocating() {
-  document.getElementById('locating').classList.add('gone');
 }
 
 function centerOnUser() {
@@ -1511,15 +1507,8 @@ function init() {
   // Register BEFORE any getSession call — INITIAL_SESSION fires synchronously on page load
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'INITIAL_SESSION') {
-      // Fires once on every page load with the stored session (or null)
-      hideLocating();
-      if (session) {
-        await setupApp(session);
-      } else {
-        showAuthScreen();
-      }
+      showAuthScreen();
     } else if (event === 'SIGNED_IN') {
-      // Fires after login or signup (when email confirmation is off)
       hideAuthScreen();
       await setupApp(session);
     } else if (event === 'SIGNED_OUT') {
@@ -1528,7 +1517,6 @@ function init() {
       allFriendships = []; friendProfiles = {};
       if (friendModeActive) exitFriendMapMode();
       updateFriendsBadge(); updateCount(); renderList();
-      document.getElementById('locating').classList.add('gone');
       showAuthScreen();
     }
   });
