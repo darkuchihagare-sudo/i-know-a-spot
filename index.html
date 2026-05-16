@@ -1593,7 +1593,7 @@ function renderEditRateGrid() {
     const r = RATINGS[n];
     const active = n === editRating;
     const border = active ? `border-color:${r.text};background:rgba(${rgb(r.base)},.18)` : '';
-    return `<div class="rate-opt" style="${border}" onclick="setEditRating(${n})">
+    return `<div class="rate-opt" style="${border}" onclick="event.stopPropagation();setEditRating(${n})">
       <div class="rate-dot" style="background:${r.base};box-shadow:0 0 7px ${r.glow}"></div>
       <div><div class="rate-name" style="${active?`color:${r.text}`:''}">${r.name}</div><div class="rate-stars">${r.stars||'—'}</div></div>
     </div>`;
