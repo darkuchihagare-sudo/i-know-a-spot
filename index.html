@@ -512,6 +512,9 @@
         placeholder="Email address" autocomplete="email" />
       <input id="auth-password" class="finput" type="password"
         placeholder="Password" autocomplete="current-password" />
+      <input id="auth-nickname" class="finput" type="text"
+        placeholder="Nickname" autocomplete="nickname"
+        style="display:none" />
       <button id="auth-btn" class="btn btn-primary" style="margin-top:4px" onclick="doAuth()">Sign In</button>
       <div id="auth-err" class="auth-err"></div>
     </div>
@@ -1030,6 +1033,8 @@ function switchTab(mode) {
   document.getElementById('tab-login').classList.toggle('active', mode==='login');
   document.getElementById('tab-signup').classList.toggle('active', mode==='signup');
   document.getElementById('auth-btn').textContent=mode==='login'?'Sign In':'Create Account';
+  document.getElementById('auth-nickname').style.display=mode==='signup'?'':'none';
+  document.getElementById('auth-nickname').value='';
   const errEl=document.getElementById('auth-err');
   errEl.textContent=''; errEl.className='auth-err';
 }
@@ -1039,11 +1044,13 @@ async function doAuth() {
   const password=document.getElementById('auth-password').value;
   const errEl=document.getElementById('auth-err');
   const btn=document.getElementById('auth-btn');
+  const nickname=document.getElementById('auth-nickname').value.trim();
   if (!email||!password) { errEl.textContent='Please fill in all fields'; return; }
+  if (authMode==='signup'&&!nickname) { errEl.textContent='Please enter a nickname'; return; }
   btn.disabled=true; btn.textContent='…'; errEl.textContent=''; errEl.className='auth-err';
   const result=authMode==='login'
     ? await sb.auth.signInWithPassword({email,password})
-    : await sb.auth.signUp({email,password});
+    : await sb.auth.signUp({email,password,options:{data:{nickname}}});
   btn.disabled=false;
   btn.textContent=authMode==='login'?'Sign In':'Create Account';
   if (result.error) {
