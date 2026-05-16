@@ -489,6 +489,69 @@
     }
     .leaflet-control-attribution a { color: var(--t3) !important; }
     ::-webkit-scrollbar { display: none; }
+
+    /* FRIENDS BUTTON + BADGE */
+    #friends-btn {
+      position: relative;
+      width: 52px; height: 64px; border: 1px solid var(--bhi); border-radius: 16px;
+      background: rgba(24,21,14,.92); color: var(--t1); font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; touch-action: manipulation; flex-shrink: 0;
+      transition: transform .12s;
+    }
+    #friends-btn:active { transform: scale(0.92); }
+    #friends-badge {
+      position: absolute; top: -5px; right: -5px;
+      min-width: 18px; height: 18px; padding: 0 4px;
+      border-radius: 9px; background: var(--gold); color: #1a0d00;
+      font-size: 10px; font-weight: 800; letter-spacing: 0;
+      display: none; align-items: center; justify-content: center;
+    }
+    #friends-badge.on { display: flex; }
+
+    /* FRIENDS SHEET */
+    .f-section {
+      padding: 14px 20px 6px;
+      font-size: 10px; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--t3);
+    }
+    .f-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 20px; border-bottom: 1px solid var(--border);
+      min-height: 56px;
+    }
+    .f-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--bg-input); border: 1.5px solid var(--bhi);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 700; color: var(--gmid);
+      flex-shrink: 0; text-transform: uppercase; letter-spacing: 0;
+    }
+    .f-name { font-size: 15px; font-weight: 600; color: var(--t1); flex: 1; min-width: 0; }
+    .f-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .f-btn {
+      padding: 0 13px; height: 34px; border-radius: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      touch-action: manipulation; font-family: var(--sys);
+      border: 1.5px solid; white-space: nowrap;
+      transition: opacity .12s; display: flex; align-items: center;
+    }
+    .f-btn:active { opacity: .65; }
+    .f-btn-add    { border-color: var(--bhi); color: var(--gmid); background: rgba(200,144,28,.08); }
+    .f-btn-sent   { border-color: var(--border); color: var(--t3); background: transparent; pointer-events: none; }
+    .f-btn-accept { border-color: #27ae60; color: #27ae60; background: rgba(39,174,96,.08); }
+    .f-btn-decline{ border-color: var(--border); color: var(--t2); background: transparent; }
+    .f-btn-remove { border-color: var(--border); color: var(--t3); background: transparent; }
+    .f-empty {
+      text-align: center; padding: 36px 24px;
+      color: var(--t3); font-size: 14px; line-height: 1.8;
+    }
+
+    /* FRIEND LABEL IN VIEW SHEET */
+    #v-friend-label {
+      font-size: 13px; color: #8bbce8; font-style: italic;
+      padding: 2px 20px 0; display: none;
+    }
   </style>
 </head>
 <body>
@@ -557,6 +620,10 @@
     <span>ADD SPOT HERE</span>
   </button>
   <button id="locate-btn" onclick="centerOnUser()">📍</button>
+  <button id="friends-btn" onclick="openFriends()">
+    <span>👥</span>
+    <span id="friends-badge"></span>
+  </button>
 </div>
 
 <!-- LIST SHEET -->
@@ -564,7 +631,7 @@
   <div class="sheet" id="list-sheet" style="max-height:82dvh">
     <div class="drag-handle"></div>
     <div class="list-hdr">
-      <div class="list-hdr-title">Your Spots</div>
+      <div class="list-hdr-title">Spots</div>
       <button class="list-close" onclick="closeList()">✕</button>
     </div>
     <div id="plist"></div>
@@ -625,6 +692,7 @@
   <div class="sheet" id="view-modal">
     <div class="drag-handle"></div>
     <div class="v-name" id="v-name"></div>
+    <div id="v-friend-label"></div>
     <div class="v-meta" id="v-meta"></div>
 
     <div class="v-rate-section">
@@ -637,8 +705,27 @@
     <div class="gallery" id="v-gallery"></div>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeView()">Close</button>
-      <button class="btn btn-del" onclick="delSpot()">Delete</button>
+      <button id="del-btn" class="btn btn-del" onclick="delSpot()">Delete</button>
     </div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
+<!-- FRIENDS SHEET -->
+<div id="friends-ov" class="sov" onclick="friendsBgClick(event)">
+  <div class="sheet" id="friends-sheet" style="max-height:94dvh">
+    <div class="drag-handle"></div>
+    <div class="list-hdr">
+      <div class="list-hdr-title">Friends</div>
+      <button class="list-close" onclick="closeFriends()">✕</button>
+    </div>
+    <div style="padding:8px 20px 12px">
+      <input id="friend-search" class="finput" type="search"
+        placeholder="Search by nickname…" autocomplete="off" oninput="onFriendSearch()" />
+    </div>
+    <div id="friend-search-results"></div>
+    <div id="pending-section"></div>
+    <div id="friends-list-section"></div>
     <div class="sh-gap"></div>
   </div>
 </div>
@@ -672,11 +759,15 @@ const RATINGS = {
   5: { name:'THE Spot',      hi:'#f2c045', base:'#c8901c', glow:'rgba(242,192,69,.55)',  ring:'rgba(242,192,69,.22)', text:'#f2c045', stars:'★★★★★' },
 };
 
+// ── FRIEND PIN COLOUR ────────────────────────────────────────
+const FPIN = { hi:'#b8daf5', base:'#4a90d9', glow:'rgba(74,144,217,.5)', ring:'rgba(74,144,217,.25)', text:'#8bbce8' };
+
 // ── STATE ────────────────────────────────────────────────────
 let spots = [], markers = {}, pendingLL = null, pendingPics = [];
 let activeId = null, ratingId = null, tempMark = null;
 let curLoc = null, locMark = null, locCircle = null;
 let currentUser = null;
+let allFriendships = [], friendProfiles = {};
 
 // ── MAP ──────────────────────────────────────────────────────
 const map = L.map('map', { center:[25,15], zoom:3, zoomControl:false });
@@ -750,6 +841,16 @@ function makeIcon(rating=0, cls='') {
   });
 }
 
+function makeFriendIcon(rating=0, cls='') {
+  const rName=RATINGS[rating]?.name||'';
+  const pin=`background:radial-gradient(circle at 35% 35%,${FPIN.hi} 0%,${FPIN.base} 100%);box-shadow:0 0 0 2px ${FPIN.ring},0 0 12px ${FPIN.glow}`;
+  return L.divIcon({
+    className:'',
+    html:`<div class="pin-outer ${cls}"><div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${FPIN.text};border-color:${FPIN.ring}">${rName}</div></div>`,
+    iconSize:[26,56], iconAnchor:[13,36]
+  });
+}
+
 function tempIcon() {
   return L.divIcon({
     className:'',
@@ -759,14 +860,17 @@ function tempIcon() {
 }
 
 function addMarker(s, isNew=false) {
-  const m=L.marker([s.latitude,s.longitude],{icon:makeIcon(s.rating||0,isNew?'pin-new':'')})
+  const isOwn=s.user_id===currentUser?.id;
+  const icon=isOwn?makeIcon(s.rating||0,isNew?'pin-new':''):makeFriendIcon(s.rating||0,isNew?'pin-new':'');
+  const m=L.marker([s.latitude,s.longitude],{icon})
     .addTo(map).on('click',()=>openView(s.id));
   markers[s.id]=m;
 }
 
 function refreshMarker(id) {
-  const s=spots.find(x=>x.id===id);
-  if (s&&markers[id]) markers[id].setIcon(makeIcon(s.rating||0));
+  const s=spots.find(x=>x.id===id); if (!s||!markers[id]) return;
+  const isOwn=s.user_id===currentUser?.id;
+  markers[id].setIcon(isOwn?makeIcon(s.rating||0):makeFriendIcon(s.rating||0));
 }
 
 // ── ADD SHEET ────────────────────────────────────────────────
@@ -903,7 +1007,13 @@ function closeRate() { document.getElementById('rate-ov').classList.remove('on')
 function openView(id) {
   const s=spots.find(x=>x.id===id); if (!s) return;
   activeId=id;
+  const isOwn=s.user_id===currentUser?.id;
   document.getElementById('v-name').textContent=s.name;
+  const lbl=document.getElementById('v-friend-label');
+  if (!isOwn) {
+    const nick=friendProfiles[s.user_id]?.nickname||'Friend';
+    lbl.textContent=`by @${nick}`; lbl.style.display='';
+  } else { lbl.style.display='none'; }
   const d=new Date(s.created_at);
   document.getElementById('v-meta').textContent=
     `${d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}  ·  `+
@@ -912,17 +1022,21 @@ function openView(id) {
   const descEl=document.getElementById('v-description');
   descEl.textContent=s.description||''; descEl.style.display=s.description?'':'none';
   document.getElementById('v-gallery').innerHTML='';
+  document.getElementById('del-btn').style.display=isOwn?'':'none';
   document.getElementById('view-ov').classList.add('on');
 }
 
 function renderViewRating(s) {
+  const isOwn=s.user_id===currentUser?.id;
   const cur=s.rating||0;
   document.getElementById('v-rate-row').innerHTML=[1,2,3,4,5].map(n=>{
     const r=RATINGS[n], active=n===cur;
     const st=active
       ?`border-color:${r.text};background:rgba(${rgb(r.base)},.18);color:${r.text}`
       :`color:${r.text}`;
-    return `<button class="v-ropt" style="${st}" onclick="rateInline(${n})">${n}</button>`;
+    return isOwn
+      ?`<button class="v-ropt" style="${st}" onclick="rateInline(${n})">${n}</button>`
+      :`<button class="v-ropt" style="${st};opacity:.45;pointer-events:none">${n}</button>`;
   }).join('');
   const cr=RATINGS[cur], el=document.getElementById('v-badge');
   el.textContent=cur>0?`${cr.stars}  ${cr.name}`:'Not yet rated';
@@ -931,7 +1045,7 @@ function renderViewRating(s) {
 
 async function rateInline(n) {
   if (!activeId) return;
-  const s=spots.find(x=>x.id===activeId); if (!s) return;
+  const s=spots.find(x=>x.id===activeId); if (!s||s.user_id!==currentUser?.id) return;
   const newRating=(s.rating===n)?0:n;
   const { error } = await sb.from('spots').update({rating:newRating}).eq('id',activeId);
   if (error) { toast('Failed to update rating'); return; }
@@ -943,9 +1057,11 @@ function closeView() { document.getElementById('view-ov').classList.remove('on')
 
 // ── DELETE ───────────────────────────────────────────────────
 async function delSpot() {
-  if (!activeId||!confirm('Remove this spot?')) return;
+  if (!activeId) return;
   const id=activeId;
   const s=spots.find(x=>x.id===id);
+  if (!s||s.user_id!==currentUser?.id) return;
+  if (!confirm('Remove this spot?')) return;
   const { error } = await sb.from('spots').delete().eq('id',id);
   if (error) { toast('Failed to delete spot'); return; }
   spots=spots.filter(x=>x.id!==id);
@@ -971,10 +1087,14 @@ function renderList() {
   const el=document.getElementById('plist');
   if (!spots.length) { el.innerHTML='<div class="empty-list">No spots yet.<br>Tap ADD SPOT HERE to mark your first.</div>'; return; }
   el.innerHTML=[...spots].reverse().map(s=>{
+    const isOwn=s.user_id===currentUser?.id;
     const r=RATINGS[s.rating||0];
+    const dotBg=isOwn?r.base:FPIN.base, dotGlow=isOwn?r.glow:FPIN.glow;
+    const sub=isOwn?r.name:`@${friendProfiles[s.user_id]?.nickname||'Friend'}`;
+    const subColor=isOwn?r.text:FPIN.text;
     return `<div class="pitem" onclick="flyTo('${s.id}')">
-      <div class="pitem-dot" style="background:${r.base};box-shadow:0 0 5px ${r.glow}"></div>
-      <div><div class="pitem-name">${esc(s.name)}</div><div class="pitem-badge" style="color:${r.text}">${r.name}</div></div>
+      <div class="pitem-dot" style="background:${dotBg};box-shadow:0 0 5px ${dotGlow}"></div>
+      <div><div class="pitem-name">${esc(s.name)}</div><div class="pitem-badge" style="color:${subColor}">${sub}</div></div>
     </div>`;
   }).join('');
 }
@@ -1006,7 +1126,7 @@ function toast(msg) {
 
 // ── HELPERS ──────────────────────────────────────────────────
 function updateCount() {
-  const n=spots.length;
+  const n=spots.filter(s=>s.user_id===currentUser?.id).length;
   document.getElementById('spot-count').textContent=`${n} spot${n!==1?'s':''}`;
 }
 function esc(s) { const d=document.createElement('div'); d.appendChild(document.createTextNode(s||'')); return d.innerHTML; }
@@ -1015,11 +1135,12 @@ function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>
 // ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key!=='Escape') return;
-  if (document.getElementById('lb').classList.contains('on'))      { closeLb();   return; }
-  if (document.getElementById('view-ov').classList.contains('on')) { closeView(); return; }
-  if (document.getElementById('rate-ov').classList.contains('on')) { skipRate();  return; }
-  if (document.getElementById('add-ov').classList.contains('on'))  { closeAdd();  return; }
-  if (document.getElementById('list-ov').classList.contains('on')) { closeList(); return; }
+  if (document.getElementById('lb').classList.contains('on'))         { closeLb();      return; }
+  if (document.getElementById('view-ov').classList.contains('on'))    { closeView();    return; }
+  if (document.getElementById('rate-ov').classList.contains('on'))    { skipRate();     return; }
+  if (document.getElementById('add-ov').classList.contains('on'))     { closeAdd();     return; }
+  if (document.getElementById('list-ov').classList.contains('on'))    { closeList();    return; }
+  if (document.getElementById('friends-ov').classList.contains('on')) { closeFriends(); return; }
 });
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -1065,6 +1186,164 @@ async function doSignOut() {
   await sb.auth.signOut();
 }
 
+// ── FRIENDS ──────────────────────────────────────────────────
+async function loadFriendData() {
+  if (!currentUser) return;
+  const { data:fships } = await sb.from('friendships')
+    .select('*')
+    .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
+  allFriendships = fships || [];
+
+  const otherIds = [...new Set(allFriendships.map(f =>
+    f.user_id===currentUser.id ? f.friend_id : f.user_id
+  ))];
+  if (otherIds.length > 0) {
+    const { data:profs } = await sb.from('profiles').select('id,nickname').in('id', otherIds);
+    friendProfiles = Object.fromEntries((profs||[]).map(p=>[p.id,p]));
+  } else {
+    friendProfiles = {};
+  }
+  updateFriendsBadge();
+}
+
+function updateFriendsBadge() {
+  const count = allFriendships.filter(f=>f.friend_id===currentUser?.id&&f.status==='pending').length;
+  const el = document.getElementById('friends-badge');
+  el.textContent = count || '';
+  el.classList.toggle('on', count > 0);
+}
+
+async function openFriends() {
+  await loadFriendData();
+  document.getElementById('friend-search').value='';
+  document.getElementById('friend-search-results').innerHTML='';
+  renderFriendsSheet();
+  document.getElementById('friends-ov').classList.add('on');
+}
+function closeFriends() { document.getElementById('friends-ov').classList.remove('on'); }
+function friendsBgClick(e) { if (!document.getElementById('friends-sheet').contains(e.target)) closeFriends(); }
+
+function renderFriendsSheet() {
+  const incoming = allFriendships.filter(f=>f.friend_id===currentUser.id&&f.status==='pending');
+  const accepted = allFriendships.filter(f=>f.status==='accepted');
+
+  const pendingEl = document.getElementById('pending-section');
+  pendingEl.innerHTML = incoming.length ? `
+    <div class="f-section">Pending Requests (${incoming.length})</div>
+    ${incoming.map(f=>{
+      const nick=friendProfiles[f.user_id]?.nickname||'…';
+      return `<div class="f-item">
+        <div class="f-avatar">${nick[0].toUpperCase()}</div>
+        <div class="f-name">@${esc(nick)}</div>
+        <div class="f-actions">
+          <button class="f-btn f-btn-accept" onclick="acceptFriendRequest('${f.id}')">Accept</button>
+          <button class="f-btn f-btn-decline" onclick="declineOrRemoveFriend('${f.id}')">Decline</button>
+        </div>
+      </div>`;
+    }).join('')}` : '';
+
+  const friendsEl = document.getElementById('friends-list-section');
+  if (accepted.length) {
+    friendsEl.innerHTML = `
+      <div class="f-section">Friends (${accepted.length})</div>
+      ${accepted.map(f=>{
+        const otherId=f.user_id===currentUser.id?f.friend_id:f.user_id;
+        const nick=friendProfiles[otherId]?.nickname||'…';
+        return `<div class="f-item">
+          <div class="f-avatar">${nick[0].toUpperCase()}</div>
+          <div class="f-name">@${esc(nick)}</div>
+          <div class="f-actions">
+            <button class="f-btn f-btn-remove" onclick="declineOrRemoveFriend('${f.id}')">Remove</button>
+          </div>
+        </div>`;
+      }).join('')}`;
+  } else {
+    friendsEl.innerHTML = !incoming.length
+      ? '<div class="f-empty">No friends yet.<br>Search above to find someone!</div>' : '';
+  }
+  document.getElementById('friend-search-results').innerHTML='';
+}
+
+let searchTimer;
+function onFriendSearch() {
+  const q = document.getElementById('friend-search').value.trim();
+  clearTimeout(searchTimer);
+  if (!q) { renderFriendsSheet(); return; }
+  searchTimer = setTimeout(()=>searchUsers(q), 350);
+}
+
+async function searchUsers(q) {
+  const { data, error } = await sb.from('profiles')
+    .select('id,nickname')
+    .ilike('nickname', `%${q}%`)
+    .neq('id', currentUser.id)
+    .limit(20);
+  if (error) { toast('Search failed'); return; }
+  const users = data || [];
+
+  if (!users.length) {
+    document.getElementById('friend-search-results').innerHTML='<div class="f-empty">No users found.</div>';
+    document.getElementById('pending-section').innerHTML='';
+    document.getElementById('friends-list-section').innerHTML='';
+    return;
+  }
+
+  document.getElementById('friend-search-results').innerHTML = users.map(u=>{
+    const existing = allFriendships.find(f=>
+      (f.user_id===currentUser.id&&f.friend_id===u.id)||
+      (f.friend_id===currentUser.id&&f.user_id===u.id)
+    );
+    let btn;
+    if (!existing) {
+      btn=`<button class="f-btn f-btn-add" onclick="sendFriendRequest('${u.id}','${esc(u.nickname)}')">+ Add</button>`;
+    } else if (existing.status==='accepted') {
+      btn=`<span class="f-btn f-btn-sent">Friends ✓</span>`;
+    } else if (existing.user_id===currentUser.id) {
+      btn=`<span class="f-btn f-btn-sent">Sent</span>`;
+    } else {
+      btn=`<button class="f-btn f-btn-accept" onclick="acceptFriendRequest('${existing.id}')">Accept</button>`;
+    }
+    return `<div class="f-item">
+      <div class="f-avatar">${u.nickname[0].toUpperCase()}</div>
+      <div class="f-name">@${esc(u.nickname)}</div>
+      <div class="f-actions">${btn}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('pending-section').innerHTML='';
+  document.getElementById('friends-list-section').innerHTML='';
+}
+
+async function sendFriendRequest(userId, nickname) {
+  const { data, error } = await sb.from('friendships').insert({
+    user_id: currentUser.id, friend_id: userId, status: 'pending'
+  }).select().single();
+  if (error) { toast('Failed to send request'); return; }
+  allFriendships.push(data);
+  toast(`Request sent to @${nickname}`);
+  onFriendSearch();
+}
+
+async function acceptFriendRequest(id) {
+  const { error } = await sb.from('friendships').update({status:'accepted'}).eq('id',id);
+  if (error) { toast('Failed to accept request'); return; }
+  const f = allFriendships.find(x=>x.id===id);
+  if (f) f.status='accepted';
+  await loadSpots();
+  updateFriendsBadge(); renderFriendsSheet();
+  toast('Friend added!');
+}
+
+async function declineOrRemoveFriend(id) {
+  const { error } = await sb.from('friendships').delete().eq('id',id);
+  if (error) { toast('Failed'); return; }
+  const wasAccepted = allFriendships.find(x=>x.id===id)?.status==='accepted';
+  allFriendships = allFriendships.filter(x=>x.id!==id);
+  if (wasAccepted) await loadSpots();
+  updateFriendsBadge();
+  const q = document.getElementById('friend-search').value.trim();
+  q ? searchUsers(q) : renderFriendsSheet();
+}
+
 // ── DATA ─────────────────────────────────────────────────────
 async function loadSpots() {
   Object.values(markers).forEach(m=>map.removeLayer(m));
@@ -1085,6 +1364,7 @@ async function init() {
   } else {
     currentUser=session.user;
     document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
+    await loadFriendData();
     await loadSpots();
     initGPS();
   }
@@ -1094,12 +1374,14 @@ async function init() {
       currentUser=session.user;
       document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
       hideAuthScreen();
+      await loadFriendData();
       await loadSpots();
       if (!locMark) initGPS();
     } else if (event==='SIGNED_OUT') {
       currentUser=null;
       spots=[]; Object.values(markers).forEach(m=>map.removeLayer(m)); markers={};
-      updateCount(); renderList();
+      allFriendships=[]; friendProfiles={};
+      updateFriendsBadge(); updateCount(); renderList();
       document.getElementById('locating').classList.add('gone');
       showAuthScreen();
     }
