@@ -1,4 +1,31 @@
 <!DOCTYPE html>
+<!--
+  I Know A Spot — Supabase Edition
+
+  SETUP: Run in Supabase → SQL Editor:
+
+    CREATE TABLE public.spots (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      rating SMALLINT DEFAULT 0,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+      -- To enable photos: ALTER TABLE public.spots ADD COLUMN photos TEXT[] DEFAULT '{}';
+    );
+    ALTER TABLE public.spots ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY "Users manage own spots" ON public.spots
+      FOR ALL USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+
+  Then in Supabase → Storage:
+    1. Create bucket "spot-photos" (toggle Public ON)
+    2. Under that bucket's Policies add two policies:
+       INSERT: (auth.uid()::text = (storage.foldername(name))[1])
+       DELETE: (auth.uid()::text = (storage.foldername(name))[1])
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -8,6 +35,7 @@
   <meta name="theme-color" content="#07060a" />
   <title>I Know A Spot</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --bg:       #07060a;
@@ -36,8 +64,46 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* MAP */
     #map { position: fixed; inset: 0; }
+
+    /* AUTH SCREEN */
+    #auth-screen {
+      position: fixed; inset: 0; z-index: 6000;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    #auth-screen.gone { display: none; }
+    .auth-inner { width: 100%; max-width: 360px; }
+    .auth-logo-wrap {
+      text-align: center; margin-bottom: 32px;
+    }
+    .auth-logo-icon { font-size: 52px; margin-bottom: 12px; }
+    .auth-logo-title {
+      font-size: 26px; font-weight: 700; letter-spacing: -.025em;
+      color: var(--ghi); text-shadow: 0 0 22px rgba(242,192,69,.45);
+    }
+    .auth-logo-sub { font-size: 14px; color: var(--t2); margin-top: 6px; }
+    .auth-tabs {
+      display: flex; background: var(--bg-input);
+      border-radius: 12px; padding: 3px; margin-bottom: 20px;
+    }
+    .auth-tab {
+      flex: 1; padding: 10px; border: none; border-radius: 9px;
+      background: transparent; color: var(--t2);
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      font-family: var(--sys); transition: background .18s, color .18s;
+      touch-action: manipulation;
+    }
+    .auth-tab.active {
+      background: var(--bg-card); color: var(--t1);
+    }
+    .auth-fields { display: flex; flex-direction: column; gap: 12px; }
+    .auth-err {
+      text-align: center; font-size: 13px; min-height: 20px;
+      color: var(--danger); margin-top: 4px;
+    }
+    .auth-err.success { color: var(--ghi); }
 
     /* LOCATING SCREEN */
     #locating {
@@ -74,6 +140,7 @@
       font-size: 19px; font-weight: 700; letter-spacing: -.025em;
       color: var(--ghi); text-shadow: 0 0 22px rgba(242,192,69,.45);
     }
+    .hdr-right { display: flex; align-items: center; gap: 8px; }
     #spot-count {
       min-height: 36px; padding: 0 14px;
       background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
@@ -82,6 +149,15 @@
       touch-action: manipulation; cursor: pointer;
     }
     #spot-count:active { opacity: .65; }
+    #user-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
+      color: var(--t2); cursor: pointer; touch-action: manipulation;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color .18s, color .18s;
+    }
+    #user-btn:hover { border-color: var(--gold); color: var(--gmid); }
+    #user-btn:active { opacity: .65; }
 
     /* BOTTOM BAR */
     #bottom-bar {
@@ -91,7 +167,6 @@
       display: flex; align-items: center; gap: 10px;
     }
 
-    /* PRIMARY ACTION BUTTON */
     #add-btn {
       flex: 1; height: 64px; border: none; border-radius: 20px; cursor: pointer;
       background: linear-gradient(135deg, #d49520 0%, #f0b030 45%, #d49520 100%);
@@ -127,7 +202,6 @@
     }
     .sov.on { opacity: 1; pointer-events: auto; }
 
-    /* SHEET */
     .sheet {
       width: 100%; background: var(--bg-card);
       border-top: 1px solid var(--bhi);
@@ -208,6 +282,7 @@
       transition: transform .12s, opacity .12s;
     }
     .btn:active { transform: scale(0.96); opacity: .8; }
+    .btn:disabled { opacity: .5; pointer-events: none; }
     .btn-primary {
       background: linear-gradient(135deg, var(--gold), var(--gmid));
       color: #1a0d00;
@@ -391,7 +466,7 @@
       50%      { box-shadow: 0 0 16px rgba(150,150,150,.7); }
     }
 
-    /* LEAFLET */
+    /* LEAFLET OVERRIDES */
     .leaflet-control-zoom {
       border: 1px solid rgba(0,0,0,.18) !important;
       border-radius: 12px !important; overflow: hidden;
@@ -413,11 +488,35 @@
       color: var(--t3) !important;
     }
     .leaflet-control-attribution a { color: var(--t3) !important; }
-
     ::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-inner">
+    <div class="auth-logo-wrap">
+      <div class="auth-logo-icon">📍</div>
+      <div class="auth-logo-title">I Know A Spot</div>
+      <div class="auth-logo-sub">Your personal spot journal</div>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tab-signup" onclick="switchTab('signup')">Sign Up</button>
+    </div>
+
+    <div class="auth-fields">
+      <input id="auth-email" class="finput" type="email"
+        placeholder="Email address" autocomplete="email" />
+      <input id="auth-password" class="finput" type="password"
+        placeholder="Password" autocomplete="current-password" />
+      <button id="auth-btn" class="btn btn-primary" style="margin-top:4px" onclick="doAuth()">Sign In</button>
+      <div id="auth-err" class="auth-err"></div>
+    </div>
+  </div>
+</div>
 
 <div id="map"></div>
 
@@ -433,7 +532,18 @@
 <header id="hdr">
   <div id="hdr-inner">
     <div id="app-name">I Know A Spot</div>
-    <div id="spot-count" onclick="openList()">0 spots</div>
+    <div class="hdr-right">
+      <div id="spot-count" onclick="openList()">0 spots</div>
+      <button id="user-btn" onclick="doSignOut()" title="Sign out">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
 
@@ -472,8 +582,8 @@
         placeholder="What do you call this place?" autocomplete="off" />
     </div>
     <div class="fg">
-      <label class="flabel" for="inp-vibe">The Vibe</label>
-      <textarea id="inp-vibe" class="ftextarea"
+      <label class="flabel" for="inp-description">The Vibe</label>
+      <textarea id="inp-description" class="ftextarea"
         placeholder="Describe the atmosphere — what makes this place feel alive…"></textarea>
     </div>
     <div class="fg">
@@ -487,7 +597,7 @@
     </div>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeAdd()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveSpot()">Save Spot</button>
+      <button class="btn btn-primary" id="save-btn" onclick="saveSpot()">Save Spot</button>
     </div>
     <div class="sh-gap"></div>
   </div>
@@ -520,7 +630,7 @@
       <div class="v-badge" id="v-badge"></div>
     </div>
 
-    <div class="v-vibe" id="v-vibe"></div>
+    <div class="v-vibe" id="v-description"></div>
     <div class="gallery" id="v-gallery"></div>
     <div class="btn-row">
       <button class="btn btn-sec" onclick="closeView()">Close</button>
@@ -538,6 +648,18 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+// ── SUPABASE ─────────────────────────────────────────────────
+const SUPABASE_URL = 'https://bqxkbfrljuuweqwbdotz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxeGtiZnJsanV1d2Vxd2Jkb3R6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTY1MTcsImV4cCI6MjA5NDQ5MjUxN30.AsNTkTEXcRzgn3Z_6QmJQQVFnHUYc5xAtbkI2OrwvCU';
+const BUCKET = 'spot-photos';
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function photoSrc(path) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+}
+
+// ── RATINGS ──────────────────────────────────────────────────
 const RATINGS = {
   0: { name:'Unrated',       hi:'#aaa',    base:'#777',    glow:'rgba(170,170,170,.38)', ring:'rgba(170,170,170,.18)', text:'#999',    stars:'' },
   1: { name:'Just a Place',  hi:'#c0c0c0', base:'#888',    glow:'rgba(190,190,190,.42)', ring:'rgba(190,190,190,.2)',  text:'#aaa',    stars:'★' },
@@ -551,15 +673,12 @@ const RATINGS = {
 let spots = [], markers = {}, pendingLL = null, pendingPics = [];
 let activeId = null, ratingId = null, tempMark = null;
 let curLoc = null, locMark = null, locCircle = null;
-
-// ── STORAGE ──────────────────────────────────────────────────
-const load    = () => { try { return JSON.parse(localStorage.getItem('ikas')||'[]'); } catch { return []; } };
-const persist = () => { try { localStorage.setItem('ikas', JSON.stringify(spots)); } catch { toast('Storage full.'); } };
+let currentUser = null;
 
 // ── MAP ──────────────────────────────────────────────────────
 const map = L.map('map', { center:[25,15], zoom:3, zoomControl:false });
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
   subdomains:'abcd', maxZoom:19
 }).addTo(map);
 L.control.zoom({ position:'bottomright' }).addTo(map);
@@ -571,51 +690,43 @@ map.on('click', e => {
 
 // ── GPS ──────────────────────────────────────────────────────
 function initGPS() {
-  if (!navigator.geolocation) { hideLocating('GPS unavailable — tap the map to add spots.'); return; }
-
+  if (!navigator.geolocation) { hideLocating('GPS unavailable — tap map to add spots.'); return; }
   navigator.geolocation.getCurrentPosition(
     p => {
-      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
-      map.setView([curLoc.lat, curLoc.lng], 15, { animate: false });
+      curLoc = { lat:p.coords.latitude, lng:p.coords.longitude };
+      map.setView([curLoc.lat, curLoc.lng], 15, { animate:false });
       putLocDot(p); hideLocating();
     },
-    () => hideLocating('Location access denied.'),
-    { enableHighAccuracy: true, timeout: 9000 }
+    () => hideLocating('Location denied.'),
+    { enableHighAccuracy:true, timeout:9000 }
   );
-
   navigator.geolocation.watchPosition(
     p => { curLoc = { lat:p.coords.latitude, lng:p.coords.longitude }; putLocDot(p); },
     () => {},
-    { enableHighAccuracy: true, maximumAge: 4000 }
+    { enableHighAccuracy:true, maximumAge:4000 }
   );
-
   setTimeout(() => hideLocating(), 7000);
 }
 
 function putLocDot(p) {
-  const ll  = [p.coords.latitude, p.coords.longitude];
-  const acc = p.coords.accuracy || 25;
+  const ll=[p.coords.latitude, p.coords.longitude], acc=p.coords.accuracy||25;
   if (!locMark) {
-    const icon = L.divIcon({
-      className:'',
+    const icon=L.divIcon({className:'',
       html:'<div class="uloc"><div class="uloc-ring"></div><div class="uloc-dot"></div></div>',
       iconSize:[22,22], iconAnchor:[11,11]
     });
-    locMark   = L.marker(ll, { icon, zIndexOffset:-200 }).addTo(map);
-    locCircle = L.circle(ll, { radius:acc, color:'#007AFF', opacity:.22, weight:1, fillColor:'#007AFF', fillOpacity:.06 }).addTo(map);
-  } else {
-    locMark.setLatLng(ll);
-    locCircle.setLatLng(ll).setRadius(acc);
-  }
+    locMark=L.marker(ll,{icon,zIndexOffset:-200}).addTo(map);
+    locCircle=L.circle(ll,{radius:acc,color:'#007AFF',opacity:.22,weight:1,fillColor:'#007AFF',fillOpacity:.06}).addTo(map);
+  } else { locMark.setLatLng(ll); locCircle.setLatLng(ll).setRadius(acc); }
 }
 
 function hideLocating(msg) {
   document.getElementById('locating').classList.add('gone');
-  if (msg) setTimeout(() => toast(msg), 650);
+  if (msg) setTimeout(()=>toast(msg), 650);
 }
 
 function centerOnUser() {
-  if (curLoc) map.flyTo([curLoc.lat, curLoc.lng], Math.max(map.getZoom(), 16), { duration:.8 });
+  if (curLoc) map.flyTo([curLoc.lat,curLoc.lng], Math.max(map.getZoom(),16), {duration:.8});
   else toast('Still finding your location…');
 }
 
@@ -625,16 +736,13 @@ function addSpotHere() {
   openAdd(L.latLng(curLoc.lat, curLoc.lng), true);
 }
 
-// ── ICON ─────────────────────────────────────────────────────
+// ── ICONS ────────────────────────────────────────────────────
 function makeIcon(rating=0, cls='') {
-  const r   = RATINGS[rating]||RATINGS[0];
-  const pin = `background:radial-gradient(circle at 35% 35%,${r.hi} 0%,${r.base} 100%);box-shadow:0 0 0 2px ${r.ring},0 0 12px ${r.glow}`;
+  const r=RATINGS[rating]||RATINGS[0];
+  const pin=`background:radial-gradient(circle at 35% 35%,${r.hi} 0%,${r.base} 100%);box-shadow:0 0 0 2px ${r.ring},0 0 12px ${r.glow}`;
   return L.divIcon({
     className:'',
-    html:`<div class="pin-outer ${cls}">
-      <div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div>
-      <div class="pin-label" style="color:${r.text};border-color:${r.ring}">${r.name}</div>
-    </div>`,
+    html:`<div class="pin-outer ${cls}"><div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${r.text};border-color:${r.ring}">${r.name}</div></div>`,
     iconSize:[26,56], iconAnchor:[13,36]
   });
 }
@@ -648,72 +756,73 @@ function tempIcon() {
 }
 
 function addMarker(s, isNew=false) {
-  const m = L.marker([s.lat,s.lng], { icon:makeIcon(s.rating||0, isNew?'pin-new':'') })
-    .addTo(map).on('click', ()=>openView(s.id));
-  markers[s.id] = m;
+  const m=L.marker([s.latitude,s.longitude],{icon:makeIcon(s.rating||0,isNew?'pin-new':'')})
+    .addTo(map).on('click',()=>openView(s.id));
+  markers[s.id]=m;
 }
 
 function refreshMarker(id) {
-  const s = spots.find(x=>x.id===id);
-  if (s && markers[id]) markers[id].setIcon(makeIcon(s.rating||0));
+  const s=spots.find(x=>x.id===id);
+  if (s&&markers[id]) markers[id].setIcon(makeIcon(s.rating||0));
 }
 
 // ── ADD SHEET ────────────────────────────────────────────────
 function openAdd(ll, fromBtn=false) {
-  pendingLL = ll; pendingPics = [];
-  document.getElementById('inp-name').value = '';
-  document.getElementById('inp-vibe').value = '';
-  document.getElementById('previews').innerHTML = '';
-  document.getElementById('file-inp').value = '';
+  pendingLL=ll; pendingPics=[];
+  document.getElementById('inp-name').value='';
+  document.getElementById('inp-description').value='';
+  document.getElementById('previews').innerHTML='';
+  document.getElementById('file-inp').value='';
   document.getElementById('inp-name').classList.remove('err');
-
-  const sub = document.getElementById('add-sub');
+  const sub=document.getElementById('add-sub');
   if (fromBtn) {
-    sub.textContent = 'Your current location';
+    sub.textContent='Your current location';
   } else {
-    sub.textContent = `${Math.abs(ll.lat).toFixed(4)}°${ll.lat>=0?'N':'S'}, ${Math.abs(ll.lng).toFixed(4)}°${ll.lng>=0?'E':'W'}`;
+    sub.textContent=`${Math.abs(ll.lat).toFixed(4)}°${ll.lat>=0?'N':'S'}, ${Math.abs(ll.lng).toFixed(4)}°${ll.lng>=0?'E':'W'}`;
     if (tempMark) map.removeLayer(tempMark);
-    tempMark = L.marker([ll.lat,ll.lng], { icon:tempIcon() }).addTo(map);
+    tempMark=L.marker([ll.lat,ll.lng],{icon:tempIcon()}).addTo(map);
   }
-
   document.getElementById('add-ov').classList.add('on');
-  setTimeout(() => document.getElementById('inp-name').focus(), 420);
+  setTimeout(()=>document.getElementById('inp-name').focus(), 420);
 }
 
 function closeAdd() {
   document.getElementById('add-ov').classList.remove('on');
-  if (tempMark) { map.removeLayer(tempMark); tempMark = null; }
-  pendingLL = null; pendingPics = [];
+  if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
+  pendingLL=null; pendingPics=[];
 }
 
 // ── PHOTOS ───────────────────────────────────────────────────
 async function onFiles(e) {
   for (const f of e.target.files) {
-    if (pendingPics.length >= 5) break;
+    if (pendingPics.length>=5) break;
     pendingPics.push(await compress(f));
     renderPics();
   }
-  e.target.value = '';
+  e.target.value='';
 }
+
 function renderPics() {
-  document.getElementById('previews').innerHTML = pendingPics.map((src,i)=>`
+  document.getElementById('previews').innerHTML=pendingPics.map((pic,i)=>`
     <div class="prev-item">
-      <img src="${src}"/>
+      <img src="${pic.dataUrl}"/>
       <button class="prev-rm" onclick="rmPic(${i})">✕</button>
     </div>`).join('');
 }
+
 function rmPic(i) { pendingPics.splice(i,1); renderPics(); }
+
 function compress(file, maxW=920, q=.76) {
   return new Promise(res => {
-    const rd = new FileReader();
-    rd.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
+    const rd=new FileReader();
+    rd.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
         let w=img.width, h=img.height;
         if (w>maxW) { h=Math.round(h*maxW/w); w=maxW; }
         const c=document.createElement('canvas'); c.width=w; c.height=h;
         c.getContext('2d').drawImage(img,0,0,w,h);
-        res(c.toDataURL('image/jpeg',q));
+        c.toBlob(blob=>res({dataUrl:c.toDataURL('image/jpeg',q),blob}),'image/jpeg',q);
       };
       img.src=ev.target.result;
     };
@@ -722,36 +831,49 @@ function compress(file, maxW=920, q=.76) {
 }
 
 // ── SAVE ─────────────────────────────────────────────────────
-function saveSpot() {
-  const name = document.getElementById('inp-name').value.trim();
+async function saveSpot() {
+  const name=document.getElementById('inp-name').value.trim();
   if (!name) {
-    const el = document.getElementById('inp-name');
+    const el=document.getElementById('inp-name');
     el.classList.add('err'); el.focus();
-    setTimeout(()=>el.classList.remove('err'), 1400);
+    setTimeout(()=>el.classList.remove('err'),1400);
     return;
   }
-  const s = {
-    id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-    name, rating:0,
-    vibe: document.getElementById('inp-vibe').value.trim(),
-    photos: [...pendingPics],
-    lat: pendingLL.lat, lng: pendingLL.lng,
-    createdAt: new Date().toISOString()
-  };
-  spots.push(s); persist();
+
+  const btn=document.getElementById('save-btn');
+  btn.disabled=true; btn.textContent='Saving…';
+
+  const { data:row, error:insErr } = await sb.from('spots').insert({
+    user_id: currentUser.id,
+    name,
+    description: document.getElementById('inp-description').value.trim(),
+    rating: 1,
+    latitude: pendingLL.lat,
+    longitude: pendingLL.lng
+  }).select().single();
+
+  if (insErr) {
+    btn.disabled=false; btn.textContent='Save Spot';
+    toast('Save failed — ' + insErr.message);
+    return;
+  }
+
+  btn.disabled=false; btn.textContent='Save Spot';
+
+  spots.push(row);
   if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
-  addMarker(s, true);
+  addMarker(row, true);
   updateCount(); renderList();
-  closeAdd(); openRate(s.id);
+  closeAdd(); openRate(row.id);
 }
 
 // ── RATE SHEET ───────────────────────────────────────────────
 function openRate(id) {
-  ratingId = id;
-  const s = spots.find(x=>x.id===id);
-  document.getElementById('rate-name').textContent = s ? `"${s.name}"` : '';
-  document.getElementById('rate-grid').innerHTML = [1,2,3,4,5].map(n => {
-    const r = RATINGS[n];
+  ratingId=id;
+  const s=spots.find(x=>x.id===id);
+  document.getElementById('rate-name').textContent=s?`"${s.name}"` : '';
+  document.getElementById('rate-grid').innerHTML=[1,2,3,4,5].map(n=>{
+    const r=RATINGS[n];
     return `<div class="rate-opt" onclick="applyRate(${n})">
       <div class="rate-dot" style="background:${r.base};box-shadow:0 0 7px ${r.glow}"></div>
       <div><div class="rate-name">${r.name}</div><div class="rate-stars">${r.stars||'—'}</div></div>
@@ -760,13 +882,14 @@ function openRate(id) {
   document.getElementById('rate-ov').classList.add('on');
 }
 
-function applyRate(n) {
+async function applyRate(n) {
   if (!ratingId) return;
-  const s = spots.find(x=>x.id===ratingId);
-  if (!s) return;
-  s.rating = n; persist();
+  const s=spots.find(x=>x.id===ratingId); if (!s) return;
+  const { error } = await sb.from('spots').update({rating:n}).eq('id',ratingId);
+  if (error) { toast('Failed to save rating'); return; }
+  s.rating=n;
   refreshMarker(ratingId); renderList();
-  if (activeId === ratingId) renderViewRating(s);
+  if (activeId===ratingId) renderViewRating(s);
   closeRate(); toast(RATINGS[n].name);
 }
 
@@ -775,52 +898,54 @@ function closeRate() { document.getElementById('rate-ov').classList.remove('on')
 
 // ── VIEW SHEET ───────────────────────────────────────────────
 function openView(id) {
-  const s = spots.find(x=>x.id===id);
-  if (!s) return;
-  activeId = id;
-  document.getElementById('v-name').textContent = s.name;
-  const d = new Date(s.createdAt);
-  document.getElementById('v-meta').textContent =
+  const s=spots.find(x=>x.id===id); if (!s) return;
+  activeId=id;
+  document.getElementById('v-name').textContent=s.name;
+  const d=new Date(s.created_at);
+  document.getElementById('v-meta').textContent=
     `${d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}  ·  `+
-    `${Math.abs(s.lat).toFixed(4)}°${s.lat>=0?'N':'S'} ${Math.abs(s.lng).toFixed(4)}°${s.lng>=0?'E':'W'}`;
+    `${Math.abs(s.latitude).toFixed(4)}°${s.latitude>=0?'N':'S'} ${Math.abs(s.longitude).toFixed(4)}°${s.longitude>=0?'E':'W'}`;
   renderViewRating(s);
-  const vibeEl = document.getElementById('v-vibe');
-  vibeEl.textContent = s.vibe||''; vibeEl.style.display = s.vibe?'':'none';
-  const gal = document.getElementById('v-gallery');
-  const n = s.photos.length;
-  gal.className = 'gallery'+(n===1?' g1':n===2?' g2':'');
-  gal.innerHTML = s.photos.map((src,i)=>`<img class="gphoto" src="${src}" onclick="openLb(${i})"/>`).join('');
+  const descEl=document.getElementById('v-description');
+  descEl.textContent=s.description||''; descEl.style.display=s.description?'':'none';
+  document.getElementById('v-gallery').innerHTML='';
   document.getElementById('view-ov').classList.add('on');
 }
 
 function renderViewRating(s) {
-  const cur = s.rating||0;
-  document.getElementById('v-rate-row').innerHTML = [1,2,3,4,5].map(n => {
+  const cur=s.rating||0;
+  document.getElementById('v-rate-row').innerHTML=[1,2,3,4,5].map(n=>{
     const r=RATINGS[n], active=n===cur;
     const st=active
-      ? `border-color:${r.text};background:rgba(${rgb(r.base)},.18);color:${r.text}`
-      : `color:${r.text}`;
+      ?`border-color:${r.text};background:rgba(${rgb(r.base)},.18);color:${r.text}`
+      :`color:${r.text}`;
     return `<button class="v-ropt" style="${st}" onclick="rateInline(${n})">${n}</button>`;
   }).join('');
   const cr=RATINGS[cur], el=document.getElementById('v-badge');
-  el.textContent = cur>0 ? `${cr.stars}  ${cr.name}` : 'Not yet rated';
-  el.style.color  = cur>0 ? cr.text : 'var(--t3)';
+  el.textContent=cur>0?`${cr.stars}  ${cr.name}`:'Not yet rated';
+  el.style.color=cur>0?cr.text:'var(--t3)';
 }
 
-function rateInline(n) {
+async function rateInline(n) {
   if (!activeId) return;
   const s=spots.find(x=>x.id===activeId); if (!s) return;
-  s.rating = (s.rating===n)?0:n;
-  persist(); refreshMarker(activeId); renderList(); renderViewRating(s);
+  const newRating=(s.rating===n)?0:n;
+  const { error } = await sb.from('spots').update({rating:newRating}).eq('id',activeId);
+  if (error) { toast('Failed to update rating'); return; }
+  s.rating=newRating;
+  refreshMarker(activeId); renderList(); renderViewRating(s);
 }
 
 function closeView() { document.getElementById('view-ov').classList.remove('on'); activeId=null; }
 
 // ── DELETE ───────────────────────────────────────────────────
-function delSpot() {
+async function delSpot() {
   if (!activeId||!confirm('Remove this spot?')) return;
   const id=activeId;
-  spots=spots.filter(s=>s.id!==id); persist();
+  const s=spots.find(x=>x.id===id);
+  const { error } = await sb.from('spots').delete().eq('id',id);
+  if (error) { toast('Failed to delete spot'); return; }
+  spots=spots.filter(x=>x.id!==id);
   if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
   updateCount(); renderList(); closeView();
 }
@@ -828,7 +953,8 @@ function delSpot() {
 // ── LIGHTBOX ─────────────────────────────────────────────────
 function openLb(i) {
   const s=spots.find(x=>x.id===activeId); if (!s) return;
-  document.getElementById('lb-img').src=s.photos[i];
+  if (!s.photos?.length) return;
+  document.getElementById('lb-img').src=photoSrc(s.photos[i]);
   document.getElementById('lb').classList.add('on');
 }
 function closeLb() { document.getElementById('lb').classList.remove('on'); }
@@ -853,13 +979,13 @@ function renderList() {
 function flyTo(id) {
   const s=spots.find(x=>x.id===id); if (!s) return;
   closeList();
-  map.flyTo([s.lat,s.lng], Math.max(map.getZoom(),15), {duration:1.0});
+  map.flyTo([s.latitude,s.longitude], Math.max(map.getZoom(),15), {duration:1.0});
   setTimeout(()=>openView(id), 1150);
 }
 
 // ── OVERLAYS ─────────────────────────────────────────────────
 function bgDismiss(e, type) {
-  const ids = { add:'add-modal', rate:'rate-modal', view:'view-modal' };
+  const ids={add:'add-modal',rate:'rate-modal',view:'view-modal'};
   if (!document.getElementById(ids[type]).contains(e.target)) {
     if (type==='add') closeAdd();
     else if (type==='rate') skipRate();
@@ -886,17 +1012,94 @@ function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>
 // ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key!=='Escape') return;
-  if (document.getElementById('lb').classList.contains('on'))      { closeLb();    return; }
-  if (document.getElementById('view-ov').classList.contains('on')) { closeView();  return; }
-  if (document.getElementById('rate-ov').classList.contains('on')) { skipRate();   return; }
-  if (document.getElementById('add-ov').classList.contains('on'))  { closeAdd();   return; }
-  if (document.getElementById('list-ov').classList.contains('on')) { closeList();  return; }
+  if (document.getElementById('lb').classList.contains('on'))      { closeLb();   return; }
+  if (document.getElementById('view-ov').classList.contains('on')) { closeView(); return; }
+  if (document.getElementById('rate-ov').classList.contains('on')) { skipRate();  return; }
+  if (document.getElementById('add-ov').classList.contains('on'))  { closeAdd();  return; }
+  if (document.getElementById('list-ov').classList.contains('on')) { closeList(); return; }
 });
 
+// ── AUTH ─────────────────────────────────────────────────────
+let authMode='login';
+
+function showAuthScreen() { document.getElementById('auth-screen').classList.remove('gone'); }
+function hideAuthScreen()  { document.getElementById('auth-screen').classList.add('gone'); }
+
+function switchTab(mode) {
+  authMode=mode;
+  document.getElementById('tab-login').classList.toggle('active', mode==='login');
+  document.getElementById('tab-signup').classList.toggle('active', mode==='signup');
+  document.getElementById('auth-btn').textContent=mode==='login'?'Sign In':'Create Account';
+  const errEl=document.getElementById('auth-err');
+  errEl.textContent=''; errEl.className='auth-err';
+}
+
+async function doAuth() {
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-password').value;
+  const errEl=document.getElementById('auth-err');
+  const btn=document.getElementById('auth-btn');
+  if (!email||!password) { errEl.textContent='Please fill in all fields'; return; }
+  btn.disabled=true; btn.textContent='…'; errEl.textContent=''; errEl.className='auth-err';
+  const result=authMode==='login'
+    ? await sb.auth.signInWithPassword({email,password})
+    : await sb.auth.signUp({email,password});
+  btn.disabled=false;
+  btn.textContent=authMode==='login'?'Sign In':'Create Account';
+  if (result.error) {
+    errEl.textContent=result.error.message;
+  } else if (authMode==='signup'&&result.data?.user&&!result.data?.session) {
+    errEl.className='auth-err success';
+    errEl.textContent='Check your email to confirm your account!';
+  }
+}
+
+async function doSignOut() {
+  await sb.auth.signOut();
+}
+
+// ── DATA ─────────────────────────────────────────────────────
+async function loadSpots() {
+  Object.values(markers).forEach(m=>map.removeLayer(m));
+  markers={};
+  const { data, error } = await sb.from('spots').select('*').order('created_at',{ascending:true});
+  if (error) { toast('Failed to load spots'); return; }
+  spots=data||[];
+  spots.forEach(s=>addMarker(s));
+  updateCount(); renderList();
+}
+
 // ── INIT ─────────────────────────────────────────────────────
-spots = load();
-spots.forEach(s => addMarker(s));
-updateCount(); renderList(); initGPS();
+async function init() {
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) {
+    document.getElementById('locating').classList.add('gone');
+    showAuthScreen();
+  } else {
+    currentUser=session.user;
+    document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
+    await loadSpots();
+    initGPS();
+  }
+
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if ((event==='SIGNED_IN'||event==='TOKEN_REFRESHED') && session) {
+      currentUser=session.user;
+      document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
+      hideAuthScreen();
+      await loadSpots();
+      if (!locMark) initGPS();
+    } else if (event==='SIGNED_OUT') {
+      currentUser=null;
+      spots=[]; Object.values(markers).forEach(m=>map.removeLayer(m)); markers={};
+      updateCount(); renderList();
+      document.getElementById('locating').classList.add('gone');
+      showAuthScreen();
+    }
+  });
+}
+
+init();
 </script>
 </body>
 </html>
