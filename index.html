@@ -1507,7 +1507,11 @@ function init() {
   // Register BEFORE any getSession call — INITIAL_SESSION fires synchronously on page load
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'INITIAL_SESSION') {
-      showAuthScreen();
+      if (session) {
+        await sb.auth.signOut(); // SIGNED_OUT fires next → showAuthScreen()
+      } else {
+        showAuthScreen();
+      }
     } else if (event === 'SIGNED_IN') {
       hideAuthScreen();
       await setupApp(session);
