@@ -552,6 +552,45 @@
       font-size: 13px; color: #8bbce8; font-style: italic;
       padding: 2px 20px 0; display: none;
     }
+
+    /* FRIEND MAP BAR */
+    #friend-map-bar {
+      display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 950;
+      height: calc(56px + env(safe-area-inset-top, 0px));
+      padding: env(safe-area-inset-top, 0) 16px 0;
+      background: rgba(7,6,10,.97); border-bottom: 1px solid var(--bhi);
+      align-items: center; gap: 12px;
+    }
+    #friend-map-bar.on { display: flex; }
+    #friend-map-back {
+      height: 36px; padding: 0 14px; flex-shrink: 0;
+      background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
+      border-radius: 18px; color: var(--gmid); font-size: 13px; font-weight: 600;
+      cursor: pointer; touch-action: manipulation; font-family: var(--sys);
+      display: flex; align-items: center; transition: opacity .12s;
+    }
+    #friend-map-back:active { opacity: .65; }
+    #friend-map-title {
+      font-size: 16px; font-weight: 700; color: var(--t1); letter-spacing: -.02em;
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* FRIEND PROFILE SHEET */
+    .fp-avatar-lg {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: var(--bg-input); border: 2px solid var(--bhi);
+      font-size: 34px; font-weight: 700; color: var(--gmid);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px; text-transform: uppercase; letter-spacing: 0;
+    }
+    .fp-title {
+      font-size: 24px; font-weight: 700; color: var(--t1);
+      letter-spacing: -.025em; text-align: center; margin-bottom: 4px;
+    }
+
+    /* TAPPABLE FRIEND ROWS */
+    .f-item { cursor: pointer; transition: background .1s; }
+    .f-item:active { background: rgba(255,255,255,.04); }
   </style>
 </head>
 <body>
@@ -585,6 +624,12 @@
 </div>
 
 <div id="map"></div>
+
+<!-- FRIEND MAP BAR -->
+<div id="friend-map-bar">
+  <button id="friend-map-back" onclick="exitFriendMapMode()">← Friends</button>
+  <div id="friend-map-title"></div>
+</div>
 
 <!-- LOCATING -->
 <div id="locating">
@@ -730,6 +775,22 @@
   </div>
 </div>
 
+<!-- FRIEND PROFILE SHEET -->
+<div id="fp-ov" class="sov" onclick="fpBgClick(event)">
+  <div class="sheet" id="fp-sheet" style="max-height:72dvh">
+    <div class="drag-handle"></div>
+    <div style="padding:28px 20px 20px;text-align:center">
+      <div class="fp-avatar-lg" id="fp-avatar"></div>
+      <div class="fp-title" id="fp-name"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeFriendProfile()">Close</button>
+      <button class="btn btn-primary" onclick="viewFriendSpotsFromProfile()">See Their Spots →</button>
+    </div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
 <!-- LIGHTBOX -->
 <div id="lb" onclick="closeLb()"><img id="lb-img" src="" alt="" /></div>
 
@@ -768,6 +829,8 @@ let activeId = null, ratingId = null, tempMark = null;
 let curLoc = null, locMark = null, locCircle = null;
 let currentUser = null;
 let allFriendships = [], friendProfiles = {};
+let friendModeActive = false, friendModeMarkers = {}, friendModeSpots = [];
+let friendProfileData = null;
 
 // ── MAP ──────────────────────────────────────────────────────
 const map = L.map('map', { center:[25,15], zoom:3, zoomControl:false });
@@ -1005,7 +1068,7 @@ function closeRate() { document.getElementById('rate-ov').classList.remove('on')
 
 // ── VIEW SHEET ───────────────────────────────────────────────
 function openView(id) {
-  const s=spots.find(x=>x.id===id); if (!s) return;
+  const s=spots.find(x=>x.id===id)||friendModeSpots.find(x=>x.id===id); if (!s) return;
   activeId=id;
   const isOwn=s.user_id===currentUser?.id;
   document.getElementById('v-name').textContent=s.name;
@@ -1045,7 +1108,7 @@ function renderViewRating(s) {
 
 async function rateInline(n) {
   if (!activeId) return;
-  const s=spots.find(x=>x.id===activeId); if (!s||s.user_id!==currentUser?.id) return;
+  const s=spots.find(x=>x.id===activeId)||friendModeSpots.find(x=>x.id===activeId); if (!s||s.user_id!==currentUser?.id) return;
   const newRating=(s.rating===n)?0:n;
   const { error } = await sb.from('spots').update({rating:newRating}).eq('id',activeId);
   if (error) { toast('Failed to update rating'); return; }
@@ -1135,6 +1198,8 @@ function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>
 // ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key!=='Escape') return;
+  if (friendModeActive)                                                 { exitFriendMapMode(); return; }
+  if (document.getElementById('fp-ov').classList.contains('on'))       { closeFriendProfile(); return; }
   if (document.getElementById('lb').classList.contains('on'))         { closeLb();      return; }
   if (document.getElementById('view-ov').classList.contains('on'))    { closeView();    return; }
   if (document.getElementById('rate-ov').classList.contains('on'))    { skipRate();     return; }
@@ -1242,18 +1307,24 @@ function renderFriendsSheet() {
       </div>`;
     }).join('')}` : '';
 
+  // Build ID-based lookup so nicknames don't need JS-string escaping in onclick
+  window._fpCache = {};
+  accepted.forEach(f => {
+    const otherId = f.user_id===currentUser.id ? f.friend_id : f.user_id;
+    window._fpCache[f.id] = { userId: otherId, nickname: friendProfiles[otherId]?.nickname||'…' };
+  });
+
   const friendsEl = document.getElementById('friends-list-section');
   if (accepted.length) {
     friendsEl.innerHTML = `
       <div class="f-section">Friends (${accepted.length})</div>
       ${accepted.map(f=>{
-        const otherId=f.user_id===currentUser.id?f.friend_id:f.user_id;
-        const nick=friendProfiles[otherId]?.nickname||'…';
-        return `<div class="f-item">
+        const { nickname:nick } = window._fpCache[f.id];
+        return `<div class="f-item" onclick="openFriendProfileById('${f.id}')">
           <div class="f-avatar">${nick[0].toUpperCase()}</div>
           <div class="f-name">@${esc(nick)}</div>
           <div class="f-actions">
-            <button class="f-btn f-btn-remove" onclick="declineOrRemoveFriend('${f.id}')">Remove</button>
+            <button class="f-btn f-btn-remove" onclick="event.stopPropagation();declineOrRemoveFriend('${f.id}')">Remove</button>
           </div>
         </div>`;
       }).join('')}`;
@@ -1344,11 +1415,75 @@ async function declineOrRemoveFriend(id) {
   q ? searchUsers(q) : renderFriendsSheet();
 }
 
+// ── FRIEND PROFILE ───────────────────────────────────────────
+function openFriendProfileById(fid) {
+  const d = window._fpCache?.[fid]; if (!d) return;
+  friendProfileData = { userId: d.userId, nickname: d.nickname, friendshipId: fid };
+  document.getElementById('fp-avatar').textContent = d.nickname[0].toUpperCase();
+  document.getElementById('fp-name').textContent = `@${d.nickname}`;
+  document.getElementById('fp-ov').classList.add('on');
+}
+function closeFriendProfile() {
+  document.getElementById('fp-ov').classList.remove('on');
+  friendProfileData = null;
+}
+function fpBgClick(e) {
+  if (!document.getElementById('fp-sheet').contains(e.target)) closeFriendProfile();
+}
+async function viewFriendSpotsFromProfile() {
+  if (!friendProfileData) return;
+  const { userId, nickname } = friendProfileData;
+  closeFriendProfile(); closeFriends();
+  await enterFriendMapMode(userId, nickname);
+}
+
+// ── FRIEND MAP MODE ──────────────────────────────────────────
+async function enterFriendMapMode(userId, nickname) {
+  // Hide own markers
+  Object.values(markers).forEach(m => m.setOpacity(0));
+
+  // Load this friend's spots
+  const { data } = await sb.from('spots').select('*').eq('user_id', userId).order('created_at',{ascending:true});
+  friendModeSpots = data || [];
+  friendModeMarkers = {};
+
+  friendModeSpots.forEach(s => {
+    const m = L.marker([s.latitude,s.longitude], {icon: makeFriendIcon(s.rating||0)})
+      .addTo(map).on('click', () => openView(s.id));
+    friendModeMarkers[s.id] = m;
+  });
+
+  if (friendModeSpots.length === 1) {
+    map.setView([friendModeSpots[0].latitude, friendModeSpots[0].longitude], 15, {animate:true});
+  } else if (friendModeSpots.length > 1) {
+    map.fitBounds(L.latLngBounds(friendModeSpots.map(s=>[s.latitude,s.longitude])), {padding:[60,60],animate:true});
+  }
+
+  document.getElementById('friend-map-bar').classList.add('on');
+  document.getElementById('friend-map-title').textContent = `@${nickname}'s Spots`;
+  document.getElementById('hdr').style.display = 'none';
+  document.getElementById('bottom-bar').style.display = 'none';
+  friendModeActive = true;
+
+  if (!friendModeSpots.length) toast(`@${nickname} has no spots yet`);
+}
+
+function exitFriendMapMode() {
+  Object.values(friendModeMarkers).forEach(m => map.removeLayer(m));
+  friendModeMarkers = {}; friendModeSpots = [];
+  Object.values(markers).forEach(m => m.setOpacity(1));
+  document.getElementById('friend-map-bar').classList.remove('on');
+  document.getElementById('hdr').style.display = '';
+  document.getElementById('bottom-bar').style.display = '';
+  friendModeActive = false;
+  openFriends();
+}
+
 // ── DATA ─────────────────────────────────────────────────────
 async function loadSpots() {
   Object.values(markers).forEach(m=>map.removeLayer(m));
   markers={};
-  const { data, error } = await sb.from('spots').select('*').order('created_at',{ascending:true});
+  const { data, error } = await sb.from('spots').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:true});
   if (error) { toast('Failed to load spots'); return; }
   spots=data||[];
   spots.forEach(s=>addMarker(s));
@@ -1356,31 +1491,35 @@ async function loadSpots() {
 }
 
 // ── INIT ─────────────────────────────────────────────────────
-async function init() {
-  const { data:{ session } } = await sb.auth.getSession();
-  if (!session) {
-    document.getElementById('locating').classList.add('gone');
-    showAuthScreen();
-  } else {
-    currentUser=session.user;
-    document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
-    await loadFriendData();
-    await loadSpots();
-    initGPS();
-  }
+async function setupApp(session) {
+  currentUser = session.user;
+  document.getElementById('user-btn').title = `${currentUser.email} — click to sign out`;
+  await loadFriendData();
+  await loadSpots();
+}
 
+function init() {
+  // Register BEFORE any getSession call — INITIAL_SESSION fires synchronously on page load
   sb.auth.onAuthStateChange(async (event, session) => {
-    if ((event==='SIGNED_IN'||event==='TOKEN_REFRESHED') && session) {
-      currentUser=session.user;
-      document.getElementById('user-btn').title=`${currentUser.email} — click to sign out`;
+    if (event === 'INITIAL_SESSION') {
+      // Fires once on every page load with the stored session (or null)
+      document.getElementById('locating').classList.add('gone');
+      if (session) {
+        await setupApp(session);
+        initGPS();
+      } else {
+        showAuthScreen();
+      }
+    } else if (event === 'SIGNED_IN') {
+      // Fires after login or signup (when email confirmation is off)
       hideAuthScreen();
-      await loadFriendData();
-      await loadSpots();
+      await setupApp(session);
       if (!locMark) initGPS();
-    } else if (event==='SIGNED_OUT') {
-      currentUser=null;
-      spots=[]; Object.values(markers).forEach(m=>map.removeLayer(m)); markers={};
-      allFriendships=[]; friendProfiles={};
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
+      allFriendships = []; friendProfiles = {};
+      if (friendModeActive) exitFriendMapMode();
       updateFriendsBadge(); updateCount(); renderList();
       document.getElementById('locating').classList.add('gone');
       showAuthScreen();
