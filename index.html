@@ -124,6 +124,14 @@
       animation: spin .75s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #loc-skip {
+      display: none; margin-top: 24px; padding: 12px 28px;
+      background: transparent; border: 1.5px solid var(--bhi);
+      border-radius: 14px; color: var(--t2); font-size: 15px; font-weight: 600;
+      font-family: var(--sys); cursor: pointer; touch-action: manipulation;
+      transition: border-color .18s, color .18s;
+    }
+    #loc-skip:active { border-color: var(--gold); color: var(--gmid); }
 
     /* HEADER */
     #hdr {
@@ -637,6 +645,7 @@
   <div class="loc-title">Locating you…</div>
   <div class="loc-sub">Finding your position</div>
   <div class="loc-spin"></div>
+  <button id="loc-skip" onclick="useDefaultLocation()">Use Default Location</button>
 </div>
 
 <!-- HEADER -->
@@ -820,6 +829,11 @@ const RATINGS = {
   5: { name:'THE Spot',      hi:'#f2c045', base:'#c8901c', glow:'rgba(242,192,69,.55)',  ring:'rgba(242,192,69,.22)', text:'#f2c045', stars:'★★★★★' },
 };
 
+// ── DEFAULTS ─────────────────────────────────────────────────
+const DEFAULT_LOC = { lat: 44.4268, lng: 26.1025 }; // Bucharest, Romania
+const GPS_OPTS    = { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 };
+let gpsTimers = [];
+
 // ── FRIEND PIN COLOUR ────────────────────────────────────────
 const FPIN = { hi:'#b8daf5', base:'#4a90d9', glow:'rgba(74,144,217,.5)', ring:'rgba(74,144,217,.25)', text:'#8bbce8' };
 
@@ -846,23 +860,46 @@ map.on('click', e => {
 });
 
 // ── GPS ──────────────────────────────────────────────────────
+function useDefaultLocation() {
+  gpsTimers.forEach(clearTimeout); gpsTimers = [];
+  document.getElementById('loc-skip').style.display = 'none';
+  if (!curLoc) {
+    curLoc = { ...DEFAULT_LOC };
+    map.setView([curLoc.lat, curLoc.lng], 12, { animate: false });
+  }
+  hideLocating();
+}
+
 function initGPS() {
-  if (!navigator.geolocation) { hideLocating('GPS unavailable — tap map to add spots.'); return; }
+  if (!navigator.geolocation) { useDefaultLocation(); return; }
+
+  // After 5 s show the skip button so the user isn't stuck
+  gpsTimers.push(setTimeout(() => {
+    document.getElementById('loc-skip').style.display = '';
+  }, 5000));
+
+  // After 10 s give up and fall back to default location
+  gpsTimers.push(setTimeout(() => useDefaultLocation(), 10000));
+
   navigator.geolocation.getCurrentPosition(
     p => {
-      curLoc = { lat:p.coords.latitude, lng:p.coords.longitude };
-      map.setView([curLoc.lat, curLoc.lng], 15, { animate:false });
+      gpsTimers.forEach(clearTimeout); gpsTimers = [];
+      curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
+      map.setView([curLoc.lat, curLoc.lng], 15, { animate: false });
       putLocDot(p); hideLocating();
     },
-    () => hideLocating('Location denied.'),
-    { enableHighAccuracy:true, timeout:9000 }
+    () => {
+      gpsTimers.forEach(clearTimeout); gpsTimers = [];
+      useDefaultLocation();
+    },
+    GPS_OPTS
   );
+
   navigator.geolocation.watchPosition(
-    p => { curLoc = { lat:p.coords.latitude, lng:p.coords.longitude }; putLocDot(p); },
+    p => { curLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; putLocDot(p); },
     () => {},
-    { enableHighAccuracy:true, maximumAge:4000 }
+    GPS_OPTS
   );
-  setTimeout(() => hideLocating(), 7000);
 }
 
 function putLocDot(p) {
@@ -878,6 +915,8 @@ function putLocDot(p) {
 }
 
 function hideLocating(msg) {
+  gpsTimers.forEach(clearTimeout); gpsTimers = [];
+  document.getElementById('loc-skip').style.display = 'none';
   document.getElementById('locating').classList.add('gone');
   if (msg) setTimeout(()=>toast(msg), 650);
 }
