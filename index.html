@@ -798,6 +798,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+
 // ── SUPABASE ─────────────────────────────────────────────────
 const SUPABASE_URL = 'https://bqxkbfrljuuweqwbdotz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxeGtiZnJsanV1d2Vxd2Jkb3R6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTY1MTcsImV4cCI6MjA5NDQ5MjUxN30.AsNTkTEXcRzgn3Z_6QmJQQVFnHUYc5xAtbkI2OrwvCU';
