@@ -1965,28 +1965,28 @@ async function saveEditProfile() {
 // ── INIT ─────────────────────────────────────────────────────
 async function setupApp(session) {
   currentUser = session.user;
-  await loadFriendData();
-  await loadSpots();
-  await loadProfile();
+  try {
+    await loadFriendData();
+    await loadSpots();
+    await loadProfile();
+  } catch (e) {
+    console.error('[setupApp] failed:', e);
+    toast('Failed to load data — please refresh');
+  }
 }
 
 function init() {
-  // INITIAL_SESSION fires synchronously during onAuthStateChange registration,
-  // reading from localStorage — no network round-trip, no visible flash.
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'INITIAL_SESSION') {
-      if (session) {
-        // Persisted session found — go straight to map, no login needed
-        hideAuthScreen();
-        await setupApp(session);
-      } else {
-        showAuthScreen();
-      }
-    } else if (event === 'SIGNED_IN') {
+    if (session && !currentUser) {
+      // First valid session from any event (INITIAL_SESSION, SIGNED_IN, or
+      // TOKEN_REFRESHED when INITIAL_SESSION fired null due to expired token)
       hideAuthScreen();
       await setupApp(session);
-    } else if (event === 'TOKEN_REFRESHED') {
-      if (session) currentUser = session.user;
+    } else if (event === 'TOKEN_REFRESHED' && session && currentUser) {
+      // Already set up — just keep the user object current
+      currentUser = session.user;
+    } else if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !session && !currentUser) {
+      showAuthScreen();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null; currentProfile = null;
       spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
