@@ -20,8 +20,8 @@
       FOR ALL USING (auth.uid() = user_id)
       WITH CHECK (auth.uid() = user_id);
 
-  Profiles table needs avatar_url (run once):
-    ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+  Profiles table needs profile_picture (run once):
+    ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS profile_picture TEXT;
 
   Then in Supabase → Storage:
     1. Create bucket "spot-photos" (toggle Public ON)
@@ -1765,21 +1765,21 @@ function avatarSrc(path) {
 async function loadProfile() {
   if (!currentUser) return;
   const { data } = await sb.from('profiles')
-    .select('id,nickname,avatar_url')
+    .select('id,nickname,profile_picture')
     .eq('id', currentUser.id)
     .single();
   currentProfile = data || {
     id: currentUser.id,
     nickname: currentUser.user_metadata?.nickname || '',
-    avatar_url: null
+    profile_picture: null
   };
   updateProfileBtn();
 }
 
 function updateProfileBtn() {
   const btn = document.getElementById('profile-btn');
-  if (currentProfile?.avatar_url) {
-    btn.innerHTML = `<img src="${avatarSrc(currentProfile.avatar_url)}" alt="" />`;
+  if (currentProfile?.profile_picture) {
+    btn.innerHTML = `<img src="${avatarSrc(currentProfile.profile_picture)}" alt="" />`;
   } else {
     const nick = currentProfile?.nickname || currentUser?.email || '?';
     btn.textContent = nick[0].toUpperCase();
@@ -1806,8 +1806,8 @@ function renderProfileSheet() {
 
   // Avatar
   const avatarEl = document.getElementById('prof-avatar-lg');
-  if (currentProfile?.avatar_url) {
-    avatarEl.innerHTML = `<img src="${avatarSrc(currentProfile.avatar_url)}" alt="" />`;
+  if (currentProfile?.profile_picture) {
+    avatarEl.innerHTML = `<img src="${avatarSrc(currentProfile.profile_picture)}" alt="" />`;
   } else {
     avatarEl.textContent = nick[0].toUpperCase();
   }
@@ -1847,7 +1847,7 @@ function openEditProfile() {
   const nick = currentProfile?.nickname || '';
   document.getElementById('ep-nickname').value = nick;
   pendingAvatarBlob = null; pendingAvatarDataUrl = null;
-  const src = currentProfile?.avatar_url ? avatarSrc(currentProfile.avatar_url) : null;
+  const src = currentProfile?.profile_picture ? avatarSrc(currentProfile.profile_picture) : null;
   renderEpAvatar(src);
   document.getElementById('edit-profile-ov').classList.add('on');
 }
@@ -1891,21 +1891,30 @@ async function saveEditProfile() {
   const btn = document.getElementById('ep-save-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  let avatarPath = currentProfile?.avatar_url || null;
+  let avatarPath = currentProfile?.profile_picture || null;
   if (pendingAvatarBlob) {
-    const path = `avatars/${currentUser.id}.jpg`;
+    const path = `${currentUser.id}/avatars/avatar.jpg`;
     const { error: upErr } = await sb.storage.from(AVATAR_BUCKET).upload(path, pendingAvatarBlob, {
       contentType: 'image/jpeg', upsert: true
     });
-    if (!upErr) avatarPath = path;
-    else { toast('Photo upload failed'); }
+    if (upErr) {
+      console.error('Avatar upload error:', upErr);
+      btn.disabled = false; btn.textContent = 'Save';
+      toast('Photo upload failed: ' + upErr.message);
+      return;
+    }
+    avatarPath = path;
   }
 
-  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, nickname, avatar_url: avatarPath });
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, nickname, profile_picture: avatarPath });
   btn.disabled = false; btn.textContent = 'Save';
-  if (error) { toast('Failed to save profile'); return; }
+  if (error) {
+    console.error('Profile upsert error:', error);
+    toast('Failed to save profile: ' + error.message);
+    return;
+  }
 
-  currentProfile = { ...currentProfile, nickname, avatar_url: avatarPath };
+  currentProfile = { ...currentProfile, nickname, profile_picture: avatarPath };
   updateProfileBtn();
   closeEditProfile();
   renderProfileSheet();
