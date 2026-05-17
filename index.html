@@ -1015,6 +1015,8 @@ function addSpotHere() {
   navigator.geolocation.getCurrentPosition(
     p => {
       btn.disabled = false; icon.textContent = '✦';
+      // Don't open the add sheet if the user navigated away while GPS was resolving
+      if (document.querySelector('.sov.on')) return;
       curLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
       putLocDot(p);
       openAdd(L.latLng(curLoc.lat, curLoc.lng), true);
@@ -1354,6 +1356,19 @@ function bgDismiss(e, type) {
   }
 }
 
+function closeAllSheets() {
+  closeAdd();
+  closeRate();
+  closeView();
+  closeEdit();
+  closeFriends();
+  closeFriendProfile();
+  closeProfile();
+  closeEditProfile();
+  closeList();
+  closeLb();
+}
+
 // ── TOAST ────────────────────────────────────────────────────
 let toastT;
 function toast(msg) {
@@ -1453,6 +1468,8 @@ function updateFriendsBadge() {
 }
 
 async function openFriends() {
+  console.log('[Friends] tapped, user:', currentUser?.id);
+  closeAllSheets();
   try {
     await loadFriendData();
     document.getElementById('friend-search').value = '';
@@ -1460,7 +1477,7 @@ async function openFriends() {
     renderFriendsSheet();
     document.getElementById('friends-ov').classList.add('on');
   } catch (err) {
-    console.error('openFriends error:', err);
+    console.error('[Friends] open error:', err);
   }
 }
 function closeFriends() { document.getElementById('friends-ov').classList.remove('on'); }
