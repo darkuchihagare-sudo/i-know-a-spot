@@ -119,6 +119,13 @@
       transition: opacity .55s ease;
     }
     #locating.gone { display: none; }
+    #restore-screen {
+      position: fixed; inset: 0; z-index: 5500;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    #restore-screen.gone { display: none; }
     .loc-icon  { font-size: 48px; margin-bottom: 18px; }
     .loc-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 7px; }
     .loc-sub   { font-size: 15px; color: var(--t2); margin-bottom: 26px; }
@@ -669,6 +676,12 @@
   <div class="loc-title">Locating you…</div>
   <div class="loc-sub">Finding your position</div>
   <div class="loc-spin"></div>
+</div>
+
+<!-- SESSION RESTORE -->
+<div id="restore-screen" class="gone">
+  <div class="loc-spin"></div>
+  <div class="loc-title" style="margin-top:18px">Restoring session…</div>
 </div>
 
 <!-- HEADER -->
@@ -1963,6 +1976,63 @@ async function saveEditProfile() {
 }
 
 // ── INIT ─────────────────────────────────────────────────────
+let appReady = false;
+
+function saveSessionBackup(session) {
+  if (!session?.access_token) return;
+  try {
+    sessionStorage.setItem('sb_bk', JSON.stringify({
+      at: session.access_token,
+      rt: session.refresh_token
+    }));
+  } catch(e) {}
+}
+
+async function tryRestoreFromBackup() {
+  try {
+    const raw = sessionStorage.getItem('sb_bk');
+    if (!raw) return false;
+    const { at, rt } = JSON.parse(raw);
+    if (!at || !rt) return false;
+    const { error } = await sb.auth.setSession({ access_token: at, refresh_token: rt });
+    if (error) { sessionStorage.removeItem('sb_bk'); return false; }
+    return true;
+  } catch(e) { return false; }
+}
+
+function showRestoreScreen() { document.getElementById('restore-screen').classList.remove('gone'); }
+function hideRestoreScreen() { document.getElementById('restore-screen').classList.add('gone'); }
+
+async function handleNullSession() {
+  const hasBackup = !!sessionStorage.getItem('sb_bk');
+  if (!hasBackup) {
+    // Definitely no session anywhere — show auth immediately
+    showAuthScreen();
+    return;
+  }
+  // Possible session — cover the screen while we try to recover
+  showRestoreScreen();
+  const backupOk = await tryRestoreFromBackup();
+  if (backupOk || appReady) return; // onAuthStateChange will fire with the restored session
+  // Give Supabase's own token refresh cycle up to 3 seconds
+  await new Promise(r => setTimeout(r, 3000));
+  if (appReady) return;
+  // Last resort: direct getSession() poll
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data?.session && !appReady) {
+      appReady = true;
+      saveSessionBackup(data.session);
+      hideRestoreScreen();
+      hideAuthScreen();
+      await setupApp(data.session);
+      return;
+    }
+  } catch(e) { console.warn('[restore] getSession failed:', e); }
+  hideRestoreScreen();
+  showAuthScreen();
+}
+
 async function setupApp(session) {
   currentUser = session.user;
   try {
@@ -1977,17 +2047,24 @@ async function setupApp(session) {
 
 function init() {
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (session && !currentUser) {
-      // First valid session from any event (INITIAL_SESSION, SIGNED_IN, or
-      // TOKEN_REFRESHED when INITIAL_SESSION fired null due to expired token)
+    console.log('[Auth]', event, session ? `uid=${session.user.id}` : 'null');
+    if (session && !appReady) {
+      // First valid session — run full setup regardless of which event delivered it
+      appReady = true;
+      saveSessionBackup(session);
+      hideRestoreScreen();
       hideAuthScreen();
       await setupApp(session);
-    } else if (event === 'TOKEN_REFRESHED' && session && currentUser) {
-      // Already set up — just keep the user object current
+    } else if (event === 'TOKEN_REFRESHED' && session && appReady) {
+      // Already live — keep user object fresh and update backup
       currentUser = session.user;
-    } else if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !session && !currentUser) {
-      showAuthScreen();
+      saveSessionBackup(session);
+    } else if (event === 'INITIAL_SESSION' && !session) {
+      // Run restore logic outside the callback to avoid re-entrancy with setSession()
+      setTimeout(handleNullSession, 0);
     } else if (event === 'SIGNED_OUT') {
+      appReady = false;
+      sessionStorage.removeItem('sb_bk');
       currentUser = null; currentProfile = null;
       spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
       allFriendships = []; friendProfiles = {};
