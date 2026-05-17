@@ -118,7 +118,7 @@
       align-items: center; justify-content: center;
       transition: opacity .55s ease;
     }
-    #locating.gone { opacity: 0; pointer-events: none; }
+    #locating.gone { display: none; }
     .loc-icon  { font-size: 48px; margin-bottom: 18px; }
     .loc-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 7px; }
     .loc-sub   { font-size: 15px; color: var(--t2); margin-bottom: 26px; }
@@ -1167,10 +1167,21 @@ async function saveSpot() {
 
   btn.disabled=false; btn.textContent='Save Spot';
 
-  // Upload any pending photos to storage and save paths
-  if (pendingPics.length > 0) {
+  // Snapshot pending pics NOW — closeAdd() clears pendingPics
+  const picsToUpload = pendingPics.slice();
+
+  // Immediately surface the spot and close the add sheet so no overlay blocks the UI
+  spots.push(row);
+  if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
+  addMarker(row, true);
+  renderList();
+  closeAdd();
+  openRate(row.id);
+
+  // Upload photos in the background after the UI is already clear
+  if (picsToUpload.length > 0) {
     const paths = [];
-    for (const pic of pendingPics) {
+    for (const pic of picsToUpload) {
       const path = `${currentUser.id}/${row.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error: upErr } = await sb.storage.from(BUCKET).upload(path, pic.blob, { contentType: 'image/jpeg' });
       if (!upErr) paths.push(path);
@@ -1178,14 +1189,10 @@ async function saveSpot() {
     if (paths.length) {
       await sb.from('spots').update({ photos: paths }).eq('id', row.id);
       row.photos = paths;
+      // Refresh the view sheet if the user already opened this spot
+      if (activeId === row.id) openView(row.id);
     }
   }
-
-  spots.push(row);
-  if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
-  addMarker(row, true);
-  renderList();
-  closeAdd(); openRate(row.id);
 }
 
 // ── RATE SHEET ───────────────────────────────────────────────
@@ -1442,16 +1449,21 @@ function updateFriendsBadge() {
 }
 
 async function openFriends() {
-  await loadFriendData();
-  document.getElementById('friend-search').value='';
-  document.getElementById('friend-search-results').innerHTML='';
-  renderFriendsSheet();
-  document.getElementById('friends-ov').classList.add('on');
+  try {
+    await loadFriendData();
+    document.getElementById('friend-search').value = '';
+    document.getElementById('friend-search-results').innerHTML = '';
+    renderFriendsSheet();
+    document.getElementById('friends-ov').classList.add('on');
+  } catch (err) {
+    console.error('openFriends error:', err);
+  }
 }
 function closeFriends() { document.getElementById('friends-ov').classList.remove('on'); }
 function friendsBgClick(e) { if (!document.getElementById('friends-sheet').contains(e.target)) closeFriends(); }
 
 function renderFriendsSheet() {
+  if (!currentUser) return;
   const incoming = allFriendships.filter(f=>f.friend_id===currentUser.id&&f.status==='pending');
   const accepted = allFriendships.filter(f=>f.status==='accepted');
 
