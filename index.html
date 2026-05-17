@@ -1998,6 +1998,12 @@ function init() {
 }
 
 init();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    closeAllSheets();
+  }
+});
 </script>
 </body>
 </html>
