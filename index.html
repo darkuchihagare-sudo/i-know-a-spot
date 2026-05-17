@@ -20,11 +20,16 @@
       FOR ALL USING (auth.uid() = user_id)
       WITH CHECK (auth.uid() = user_id);
 
+  Profiles table needs avatar_url (run once):
+    ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
   Then in Supabase → Storage:
     1. Create bucket "spot-photos" (toggle Public ON)
     2. Under that bucket's Policies add two policies:
        INSERT: (auth.uid()::text = (storage.foldername(name))[1])
        DELETE: (auth.uid()::text = (storage.foldername(name))[1])
+    (This covers both spot photos stored under {userId}/{spotId}/...
+     and profile avatars stored under avatars/{userId}.jpg)
 -->
 <html lang="en">
 <head>
@@ -139,24 +144,28 @@
       font-size: 19px; font-weight: 700; letter-spacing: -.025em;
       color: var(--ghi); text-shadow: 0 0 22px rgba(242,192,69,.45);
     }
-    .hdr-right { display: flex; align-items: center; gap: 8px; }
-    #spot-count {
-      min-height: 36px; padding: 0 14px;
-      background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
-      border-radius: 18px; font-size: 13px; font-weight: 600;
-      color: var(--gmid); display: flex; align-items: center;
-      touch-action: manipulation; cursor: pointer;
-    }
-    #spot-count:active { opacity: .65; }
-    #user-btn {
+    .hdr-right { display: flex; align-items: center; gap: 10px; }
+    #friends-hdr-btn {
+      position: relative;
       width: 36px; height: 36px; border-radius: 50%;
       background: rgba(24,21,14,.92); border: 1px solid var(--bhi);
-      color: var(--t2); cursor: pointer; touch-action: manipulation;
+      color: var(--t1); font-size: 18px; cursor: pointer;
+      touch-action: manipulation;
       display: flex; align-items: center; justify-content: center;
-      transition: border-color .18s, color .18s;
+      transition: opacity .12s;
     }
-    #user-btn:hover { border-color: var(--gold); color: var(--gmid); }
-    #user-btn:active { opacity: .65; }
+    #friends-hdr-btn:active { opacity: .65; }
+    #profile-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), var(--gmid));
+      border: 2px solid var(--bhi); color: #1a0d00;
+      cursor: pointer; touch-action: manipulation;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; text-transform: uppercase;
+      overflow: hidden; transition: opacity .12s; flex-shrink: 0;
+    }
+    #profile-btn:active { opacity: .7; }
+    #profile-btn img { width: 100%; height: 100%; object-fit: cover; }
 
     /* BOTTOM BAR */
     #bottom-bar {
@@ -451,6 +460,13 @@
       background: rgba(12,10,6,.92); white-space: nowrap;
       letter-spacing: .04em; line-height: 1.5;
     }
+    .pin-fresh {
+      font-size: 7.5px; font-weight: 900; letter-spacing: .14em;
+      line-height: 1; white-space: nowrap;
+      color: #1a0d00; background: #f2c045;
+      border-radius: 3px; padding: 2px 5px; margin-bottom: 4px;
+      box-shadow: 0 1px 6px rgba(242,192,69,.75);
+    }
     .pin-new { animation: pinPop .45s cubic-bezier(.34,1.56,.64,1) forwards; }
     @keyframes pinPop {
       from { transform: scale(0) translateY(10px); opacity: 0; }
@@ -489,24 +505,37 @@
     .leaflet-control-attribution a { color: var(--t3) !important; }
     ::-webkit-scrollbar { display: none; }
 
-    /* FRIENDS BUTTON + BADGE */
-    #friends-btn {
-      position: relative;
-      width: 52px; height: 64px; border: 1px solid var(--bhi); border-radius: 16px;
-      background: rgba(24,21,14,.92); color: var(--t1); font-size: 20px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; touch-action: manipulation; flex-shrink: 0;
-      transition: transform .12s;
-    }
-    #friends-btn:active { transform: scale(0.92); }
+    /* FRIENDS BADGE (on header button) */
     #friends-badge {
-      position: absolute; top: -5px; right: -5px;
-      min-width: 18px; height: 18px; padding: 0 4px;
-      border-radius: 9px; background: var(--gold); color: #1a0d00;
-      font-size: 10px; font-weight: 800; letter-spacing: 0;
+      position: absolute; top: -4px; right: -4px;
+      min-width: 16px; height: 16px; padding: 0 3px;
+      border-radius: 8px; background: var(--gold); color: #1a0d00;
+      font-size: 9px; font-weight: 800; letter-spacing: 0;
       display: none; align-items: center; justify-content: center;
+      pointer-events: none;
     }
     #friends-badge.on { display: flex; }
+
+    /* PROFILE SHEET */
+    .prof-avatar-lg {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), var(--gmid));
+      border: 2.5px solid var(--bhi);
+      font-size: 34px; font-weight: 800; color: #1a0d00;
+      display: flex; align-items: center; justify-content: center;
+      text-transform: uppercase; overflow: hidden; flex-shrink: 0;
+    }
+    .prof-avatar-lg img { width: 100%; height: 100%; object-fit: cover; }
+    .prof-stat {
+      text-align: center; min-width: 80px;
+    }
+    .prof-stat-val {
+      font-size: 22px; font-weight: 700; color: var(--ghi); letter-spacing: -.02em;
+    }
+    .prof-stat-lbl {
+      font-size: 10px; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--t3); margin-top: 2px;
+    }
 
     /* FRIENDS SHEET */
     .f-section {
@@ -643,16 +672,11 @@
   <div id="hdr-inner">
     <div id="app-name">I Know A Spot</div>
     <div class="hdr-right">
-      <div id="spot-count" onclick="openList()">0 spots</div>
-      <button id="user-btn" onclick="doSignOut()" title="Sign out">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2.5"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-          <polyline points="16 17 21 12 16 7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
+      <button id="friends-hdr-btn" onclick="openFriends()">
+        👥
+        <span id="friends-badge"></span>
       </button>
+      <button id="profile-btn" onclick="openProfile()"></button>
     </div>
   </div>
 </header>
@@ -664,10 +688,6 @@
     <span>ADD SPOT HERE</span>
   </button>
   <button id="locate-btn" onclick="centerOnUser()">📍</button>
-  <button id="friends-btn" onclick="openFriends()">
-    <span>👥</span>
-    <span id="friends-badge"></span>
-  </button>
 </div>
 
 <!-- LIST SHEET -->
@@ -825,6 +845,74 @@
   </div>
 </div>
 
+<!-- PROFILE SHEET -->
+<div id="profile-ov" class="sov" onclick="profileBgClick(event)">
+  <div class="sheet" id="profile-sheet" style="max-height:92dvh">
+    <div class="drag-handle"></div>
+
+    <div style="text-align:center;padding:28px 20px 20px">
+      <div id="prof-avatar-lg" class="prof-avatar-lg" style="margin:0 auto 16px"></div>
+      <div id="prof-nickname" style="font-size:24px;font-weight:700;letter-spacing:-.025em;color:var(--t1);margin-bottom:3px"></div>
+      <div id="prof-email" style="font-size:13px;color:var(--t2);margin-bottom:20px"></div>
+      <div style="display:flex;justify-content:center;gap:32px">
+        <div class="prof-stat">
+          <div class="prof-stat-val" id="prof-spot-count">0</div>
+          <div class="prof-stat-lbl">Spots</div>
+        </div>
+        <div class="prof-stat">
+          <div class="prof-stat-val" id="prof-since" style="font-size:15px"></div>
+          <div class="prof-stat-lbl">Member since</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding:12px 20px 6px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3)">My Spots</div>
+    </div>
+    <div id="prof-spots-list"></div>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-sec" onclick="openEditProfile()">Edit Profile</button>
+    </div>
+    <div style="padding:0 20px;margin-top:10px">
+      <button class="btn btn-del" style="width:100%;flex:none;padding:14px 0" onclick="doSignOut()">Sign Out</button>
+    </div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
+<!-- EDIT PROFILE SHEET -->
+<div id="edit-profile-ov" class="sov" onclick="editProfileBgClick(event)">
+  <div class="sheet" id="edit-profile-modal">
+    <div class="drag-handle"></div>
+    <div class="sh-title">Edit Profile</div>
+
+    <div class="fg">
+      <label class="flabel">Profile Picture</label>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div id="ep-avatar-preview" class="prof-avatar-lg" style="width:72px;height:72px;font-size:28px"></div>
+        <div class="upload-zone" style="flex:1">
+          <input type="file" id="ep-file-inp" accept="image/*" onchange="onAvatarFile(event)" />
+          <div class="upload-icon">📷</div>
+          <div class="upload-txt">Tap to change photo</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fg">
+      <label class="flabel" for="ep-nickname">Nickname</label>
+      <input id="ep-nickname" class="finput" type="text"
+        placeholder="Your nickname" autocomplete="off" />
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="closeEditProfile()">Cancel</button>
+      <button class="btn btn-primary" id="ep-save-btn" onclick="saveEditProfile()">Save</button>
+    </div>
+    <div class="sh-gap"></div>
+  </div>
+</div>
+
 <!-- LIGHTBOX -->
 <div id="lb" onclick="closeLb()"><img id="lb-img" src="" alt="" /></div>
 
@@ -936,23 +1024,29 @@ function addSpotHere() {
 }
 
 // ── ICONS ────────────────────────────────────────────────────
-function makeIcon(rating=0, cls='') {
+function isFresh(s) {
+  return !!s.created_at && (Date.now() - new Date(s.created_at).getTime() < 86400000);
+}
+
+function makeIcon(rating=0, cls='', fresh=false) {
   const r=RATINGS[rating]||RATINGS[0];
   const pin=`background:radial-gradient(circle at 35% 35%,${r.hi} 0%,${r.base} 100%);box-shadow:0 0 0 2px ${r.ring},0 0 12px ${r.glow}`;
+  const badge=fresh?'<div class="pin-fresh">FRESH</div>':'';
   return L.divIcon({
     className:'',
-    html:`<div class="pin-outer ${cls}"><div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${r.text};border-color:${r.ring}">${r.name}</div></div>`,
-    iconSize:[26,56], iconAnchor:[13,36]
+    html:`<div class="pin-outer ${cls}">${badge}<div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${r.text};border-color:${r.ring}">${r.name}</div></div>`,
+    iconSize:[26, fresh?72:56], iconAnchor:[13, fresh?52:36]
   });
 }
 
-function makeFriendIcon(rating=0, cls='') {
+function makeFriendIcon(rating=0, cls='', fresh=false) {
   const rName=RATINGS[rating]?.name||'';
   const pin=`background:radial-gradient(circle at 35% 35%,${FPIN.hi} 0%,${FPIN.base} 100%);box-shadow:0 0 0 2px ${FPIN.ring},0 0 12px ${FPIN.glow}`;
+  const badge=fresh?'<div class="pin-fresh">FRESH</div>':'';
   return L.divIcon({
     className:'',
-    html:`<div class="pin-outer ${cls}"><div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${FPIN.text};border-color:${FPIN.ring}">${rName}</div></div>`,
-    iconSize:[26,56], iconAnchor:[13,36]
+    html:`<div class="pin-outer ${cls}">${badge}<div class="pin-body"><div class="pin-shape" style="${pin}"></div><div class="pin-shadow"></div></div><div class="pin-label" style="color:${FPIN.text};border-color:${FPIN.ring}">${rName}</div></div>`,
+    iconSize:[26, fresh?72:56], iconAnchor:[13, fresh?52:36]
   });
 }
 
@@ -966,7 +1060,8 @@ function tempIcon() {
 
 function addMarker(s, isNew=false) {
   const isOwn=s.user_id===currentUser?.id;
-  const icon=isOwn?makeIcon(s.rating||0,isNew?'pin-new':''):makeFriendIcon(s.rating||0,isNew?'pin-new':'');
+  const fresh=isFresh(s);
+  const icon=isOwn?makeIcon(s.rating||0,isNew?'pin-new':'',fresh):makeFriendIcon(s.rating||0,isNew?'pin-new':'',fresh);
   const m=L.marker([s.latitude,s.longitude],{icon})
     .addTo(map).on('click',()=>openView(s.id));
   markers[s.id]=m;
@@ -975,7 +1070,7 @@ function addMarker(s, isNew=false) {
 function refreshMarker(id) {
   const s=spots.find(x=>x.id===id); if (!s||!markers[id]) return;
   const isOwn=s.user_id===currentUser?.id;
-  markers[id].setIcon(isOwn?makeIcon(s.rating||0):makeFriendIcon(s.rating||0));
+  markers[id].setIcon(isOwn?makeIcon(s.rating||0,'',isFresh(s)):makeFriendIcon(s.rating||0,'',isFresh(s)));
 }
 
 // ── ADD SHEET ────────────────────────────────────────────────
@@ -1089,7 +1184,7 @@ async function saveSpot() {
   spots.push(row);
   if (tempMark) { map.removeLayer(tempMark); tempMark=null; }
   addMarker(row, true);
-  updateCount(); renderList();
+  renderList();
   closeAdd(); openRate(row.id);
 }
 
@@ -1197,7 +1292,7 @@ async function delSpot() {
   if (error) { toast('Failed to delete spot'); return; }
   spots=spots.filter(x=>x.id!==id);
   if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-  updateCount(); renderList(); closeView();
+  renderList(); closeView();
 }
 
 // ── LIGHTBOX ─────────────────────────────────────────────────
@@ -1257,10 +1352,6 @@ function toast(msg) {
 }
 
 // ── HELPERS ──────────────────────────────────────────────────
-function updateCount() {
-  const n=spots.filter(s=>s.user_id===currentUser?.id).length;
-  document.getElementById('spot-count').textContent=`${n} spot${n!==1?'s':''}`;
-}
 function esc(s) { const d=document.createElement('div'); d.appendChild(document.createTextNode(s||'')); return d.innerHTML; }
 function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>16)&255},${(n>>8)&255},${n&255}`; }
 
@@ -1268,14 +1359,16 @@ function rgb(hex) { const h=hex.replace('#',''),n=parseInt(h,16); return `${(n>>
 document.addEventListener('keydown', e => {
   if (e.key!=='Escape') return;
   if (friendModeActive)                                                 { exitFriendMapMode(); return; }
-  if (document.getElementById('fp-ov').classList.contains('on'))       { closeFriendProfile(); return; }
-  if (document.getElementById('lb').classList.contains('on'))         { closeLb();      return; }
-  if (document.getElementById('edit-ov').classList.contains('on'))    { closeEdit();    return; }
-  if (document.getElementById('view-ov').classList.contains('on'))    { closeView();    return; }
-  if (document.getElementById('rate-ov').classList.contains('on'))    { skipRate();     return; }
-  if (document.getElementById('add-ov').classList.contains('on'))     { closeAdd();     return; }
-  if (document.getElementById('list-ov').classList.contains('on'))    { closeList();    return; }
-  if (document.getElementById('friends-ov').classList.contains('on')) { closeFriends(); return; }
+  if (document.getElementById('fp-ov').classList.contains('on'))           { closeFriendProfile();  return; }
+  if (document.getElementById('edit-profile-ov').classList.contains('on')) { closeEditProfile();    return; }
+  if (document.getElementById('profile-ov').classList.contains('on'))      { closeProfile();        return; }
+  if (document.getElementById('lb').classList.contains('on'))               { closeLb();             return; }
+  if (document.getElementById('edit-ov').classList.contains('on'))          { closeEdit();           return; }
+  if (document.getElementById('view-ov').classList.contains('on'))          { closeView();           return; }
+  if (document.getElementById('rate-ov').classList.contains('on'))          { skipRate();            return; }
+  if (document.getElementById('add-ov').classList.contains('on'))           { closeAdd();            return; }
+  if (document.getElementById('list-ov').classList.contains('on'))          { closeList();           return; }
+  if (document.getElementById('friends-ov').classList.contains('on'))       { closeFriends();        return; }
 });
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -1518,7 +1611,7 @@ async function enterFriendMapMode(userId, nickname) {
   friendModeMarkers = {};
 
   friendModeSpots.forEach(s => {
-    const m = L.marker([s.latitude,s.longitude], {icon: makeFriendIcon(s.rating||0)})
+    const m = L.marker([s.latitude,s.longitude], {icon: makeFriendIcon(s.rating||0,'',isFresh(s))})
       .addTo(map).on('click', () => openView(s.id));
     friendModeMarkers[s.id] = m;
   });
@@ -1557,7 +1650,7 @@ async function loadSpots() {
   if (error) { toast('Failed to load spots'); return; }
   spots=data||[];
   spots.forEach(s=>addMarker(s));
-  updateCount(); renderList();
+  renderList();
 }
 
 // ── EDIT SHEET ───────────────────────────────────────────────
@@ -1658,12 +1751,173 @@ function closeEdit() {
   editId = null; editLL = null;
 }
 
+// ── PROFILE ──────────────────────────────────────────────────
+let currentProfile = null;
+let pendingAvatarBlob = null, pendingAvatarDataUrl = null;
+
+const AVATAR_BUCKET = BUCKET; // reuse spot-photos bucket under avatars/ prefix
+
+function avatarSrc(path) {
+  if (!path) return null;
+  return `${SUPABASE_URL}/storage/v1/object/public/${AVATAR_BUCKET}/${path}`;
+}
+
+async function loadProfile() {
+  if (!currentUser) return;
+  const { data } = await sb.from('profiles')
+    .select('id,nickname,avatar_url')
+    .eq('id', currentUser.id)
+    .single();
+  currentProfile = data || {
+    id: currentUser.id,
+    nickname: currentUser.user_metadata?.nickname || '',
+    avatar_url: null
+  };
+  updateProfileBtn();
+}
+
+function updateProfileBtn() {
+  const btn = document.getElementById('profile-btn');
+  if (currentProfile?.avatar_url) {
+    btn.innerHTML = `<img src="${avatarSrc(currentProfile.avatar_url)}" alt="" />`;
+  } else {
+    const nick = currentProfile?.nickname || currentUser?.email || '?';
+    btn.textContent = nick[0].toUpperCase();
+  }
+}
+
+function openProfile() {
+  renderProfileSheet();
+  document.getElementById('profile-ov').classList.add('on');
+}
+function closeProfile() { document.getElementById('profile-ov').classList.remove('on'); }
+function profileBgClick(e) {
+  if (!document.getElementById('profile-sheet').contains(e.target)) closeProfile();
+}
+
+function renderProfileSheet() {
+  const nick = currentProfile?.nickname || currentUser?.email?.split('@')[0] || 'User';
+  const email = currentUser?.email || '';
+  const createdAt = currentUser?.created_at || currentUser?.user_metadata?.created_at;
+  const since = createdAt
+    ? new Date(createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : '';
+  const ownSpots = spots.filter(s => s.user_id === currentUser?.id);
+
+  // Avatar
+  const avatarEl = document.getElementById('prof-avatar-lg');
+  if (currentProfile?.avatar_url) {
+    avatarEl.innerHTML = `<img src="${avatarSrc(currentProfile.avatar_url)}" alt="" />`;
+  } else {
+    avatarEl.textContent = nick[0].toUpperCase();
+  }
+
+  document.getElementById('prof-nickname').textContent = nick;
+  document.getElementById('prof-email').textContent = email;
+  document.getElementById('prof-spot-count').textContent = ownSpots.length;
+  document.getElementById('prof-since').textContent = since;
+
+  // Spots list
+  const listEl = document.getElementById('prof-spots-list');
+  if (!ownSpots.length) {
+    listEl.innerHTML = '<div class="empty-list" style="padding:28px 24px">No spots yet.</div>';
+  } else {
+    listEl.innerHTML = [...ownSpots].reverse().map(s => {
+      const r = RATINGS[s.rating || 0];
+      return `<div class="pitem" onclick="profileFlyTo('${s.id}')">
+        <div class="pitem-dot" style="background:${r.base};box-shadow:0 0 5px ${r.glow}"></div>
+        <div>
+          <div class="pitem-name">${esc(s.name)}</div>
+          <div class="pitem-badge" style="color:${r.text}">${r.name}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function profileFlyTo(id) {
+  const s = spots.find(x => x.id === id); if (!s) return;
+  closeProfile();
+  map.flyTo([s.latitude, s.longitude], Math.max(map.getZoom(), 15), { duration: 1.0 });
+  setTimeout(() => openView(id), 1150);
+}
+
+// ── EDIT PROFILE ─────────────────────────────────────────────
+function openEditProfile() {
+  const nick = currentProfile?.nickname || '';
+  document.getElementById('ep-nickname').value = nick;
+  pendingAvatarBlob = null; pendingAvatarDataUrl = null;
+  const src = currentProfile?.avatar_url ? avatarSrc(currentProfile.avatar_url) : null;
+  renderEpAvatar(src);
+  document.getElementById('edit-profile-ov').classList.add('on');
+}
+
+function closeEditProfile() {
+  document.getElementById('edit-profile-ov').classList.remove('on');
+  pendingAvatarBlob = null; pendingAvatarDataUrl = null;
+}
+
+function editProfileBgClick(e) {
+  if (!document.getElementById('edit-profile-modal').contains(e.target)) closeEditProfile();
+}
+
+function renderEpAvatar(src) {
+  const el = document.getElementById('ep-avatar-preview');
+  if (src) {
+    el.innerHTML = `<img src="${src}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`;
+  } else {
+    const nick = currentProfile?.nickname || currentUser?.email || '?';
+    el.textContent = nick[0].toUpperCase();
+  }
+}
+
+async function onAvatarFile(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const compressed = await compress(file, 400, 0.82);
+  pendingAvatarBlob = compressed.blob;
+  pendingAvatarDataUrl = compressed.dataUrl;
+  renderEpAvatar(pendingAvatarDataUrl);
+  e.target.value = '';
+}
+
+async function saveEditProfile() {
+  const nickname = document.getElementById('ep-nickname').value.trim();
+  if (!nickname) {
+    const el = document.getElementById('ep-nickname');
+    el.classList.add('err'); el.focus();
+    setTimeout(() => el.classList.remove('err'), 1400);
+    return;
+  }
+  const btn = document.getElementById('ep-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  let avatarPath = currentProfile?.avatar_url || null;
+  if (pendingAvatarBlob) {
+    const path = `avatars/${currentUser.id}.jpg`;
+    const { error: upErr } = await sb.storage.from(AVATAR_BUCKET).upload(path, pendingAvatarBlob, {
+      contentType: 'image/jpeg', upsert: true
+    });
+    if (!upErr) avatarPath = path;
+    else { toast('Photo upload failed'); }
+  }
+
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, nickname, avatar_url: avatarPath });
+  btn.disabled = false; btn.textContent = 'Save';
+  if (error) { toast('Failed to save profile'); return; }
+
+  currentProfile = { ...currentProfile, nickname, avatar_url: avatarPath };
+  updateProfileBtn();
+  closeEditProfile();
+  renderProfileSheet();
+  toast('Profile updated');
+}
+
 // ── INIT ─────────────────────────────────────────────────────
 async function setupApp(session) {
   currentUser = session.user;
-  document.getElementById('user-btn').title = `${currentUser.email} — click to sign out`;
   await loadFriendData();
   await loadSpots();
+  await loadProfile();
 }
 
 function init() {
@@ -1679,11 +1933,13 @@ function init() {
       hideAuthScreen();
       await setupApp(session);
     } else if (event === 'SIGNED_OUT') {
-      currentUser = null;
+      currentUser = null; currentProfile = null;
       spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
       allFriendships = []; friendProfiles = {};
       if (friendModeActive) exitFriendMapMode();
-      updateFriendsBadge(); updateCount(); renderList();
+      document.getElementById('profile-ov').classList.remove('on');
+      document.getElementById('edit-profile-ov').classList.remove('on');
+      updateFriendsBadge(); renderList();
       showAuthScreen();
     }
   });
