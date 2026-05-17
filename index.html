@@ -925,8 +925,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
-
 // ── SUPABASE ─────────────────────────────────────────────────
 const SUPABASE_URL = 'https://bqxkbfrljuuweqwbdotz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxeGtiZnJsanV1d2Vxd2Jkb3R6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MTY1MTcsImV4cCI6MjA5NDQ5MjUxN30.AsNTkTEXcRzgn3Z_6QmJQQVFnHUYc5xAtbkI2OrwvCU';
@@ -1973,24 +1971,28 @@ async function setupApp(session) {
 }
 
 function init() {
-  // Register BEFORE any getSession call — INITIAL_SESSION fires synchronously on page load
+  // INITIAL_SESSION fires synchronously during onAuthStateChange registration,
+  // reading from localStorage — no network round-trip, no visible flash.
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'INITIAL_SESSION') {
       if (session) {
-        await sb.auth.signOut(); // SIGNED_OUT fires next → showAuthScreen()
+        // Persisted session found — go straight to map, no login needed
+        hideAuthScreen();
+        await setupApp(session);
       } else {
         showAuthScreen();
       }
     } else if (event === 'SIGNED_IN') {
       hideAuthScreen();
       await setupApp(session);
+    } else if (event === 'TOKEN_REFRESHED') {
+      if (session) currentUser = session.user;
     } else if (event === 'SIGNED_OUT') {
       currentUser = null; currentProfile = null;
       spots = []; Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
       allFriendships = []; friendProfiles = {};
       if (friendModeActive) exitFriendMapMode();
-      document.getElementById('profile-ov').classList.remove('on');
-      document.getElementById('edit-profile-ov').classList.remove('on');
+      closeAllSheets();
       updateFriendsBadge(); renderList();
       showAuthScreen();
     }
@@ -1999,9 +2001,19 @@ function init() {
 
 init();
 
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
     closeAllSheets();
+    if (!currentUser) return;
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        currentUser = session.user;
+        await loadFriendData();
+      }
+    } catch (e) {
+      console.warn('[Wake] session refresh failed:', e);
+    }
   }
 });
 </script>
