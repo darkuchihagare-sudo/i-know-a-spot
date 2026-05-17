@@ -554,7 +554,9 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 15px; font-weight: 700; color: var(--gmid);
       flex-shrink: 0; text-transform: uppercase; letter-spacing: 0;
+      overflow: hidden;
     }
+    .f-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .f-name { font-size: 15px; font-weight: 600; color: var(--t1); flex: 1; min-width: 0; }
     .f-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .f-btn {
@@ -1474,8 +1476,10 @@ function renderFriendsSheet() {
     <div class="f-section">Pending Requests (${incoming.length})</div>
     ${incoming.map(f=>{
       const nick=friendProfiles[f.user_id]?.nickname||'…';
+      const pic=friendProfiles[f.user_id]?.profile_picture;
+      const av=pic?`<img src="${avatarSrc(pic)}" alt="">`:`${nick[0].toUpperCase()}`;
       return `<div class="f-item">
-        <div class="f-avatar">${nick[0].toUpperCase()}</div>
+        <div class="f-avatar">${av}</div>
         <div class="f-name">@${esc(nick)}</div>
         <div class="f-actions">
           <button class="f-btn f-btn-accept" onclick="acceptFriendRequest('${f.id}')">Accept</button>
@@ -1496,9 +1500,11 @@ function renderFriendsSheet() {
     friendsEl.innerHTML = `
       <div class="f-section">Friends (${accepted.length})</div>
       ${accepted.map(f=>{
-        const { nickname:nick } = window._fpCache[f.id];
+        const { userId:otherId, nickname:nick } = window._fpCache[f.id];
+        const pic=friendProfiles[otherId]?.profile_picture;
+        const av=pic?`<img src="${avatarSrc(pic)}" alt="">`:`${nick[0].toUpperCase()}`;
         return `<div class="f-item" onclick="openFriendProfileById('${f.id}')">
-          <div class="f-avatar">${nick[0].toUpperCase()}</div>
+          <div class="f-avatar">${av}</div>
           <div class="f-name">@${esc(nick)}</div>
           <div class="f-actions">
             <button class="f-btn f-btn-remove" onclick="event.stopPropagation();declineOrRemoveFriend('${f.id}')">Remove</button>
